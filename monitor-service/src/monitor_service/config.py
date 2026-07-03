@@ -143,13 +143,18 @@ def normalize_tool_config(raw_config: dict[str, Any], fallback_config: ToolConfi
     raw_current = cast(dict[str, Any], raw_config.get("current", legacy_window))
     raw_weekly = cast(dict[str, Any], raw_config.get("weekly", fallback_config["weekly"]))
 
+    # Migrate the legacy Spanish default so the "no recent data" sentinel keeps matching
+    # persisted configs saved before the switch to English.
+    raw_status = str(raw_config.get("status_text", fallback_config["status_text"]))
+    status_text = "No recent data" if raw_status == "Sin datos recientes" else raw_status
+
     return {
         "enabled": bool(raw_config.get("enabled", fallback_config["enabled"])),
         "label": str(raw_config.get("label", fallback_config["label"])),
         "current": normalize_usage_window_config(raw_current, fallback_config["current"]),
         "weekly": normalize_usage_window_config(raw_weekly, fallback_config["weekly"]),
         "waiting_for_user": bool(raw_config.get("waiting_for_user", fallback_config["waiting_for_user"])),
-        "status_text": str(raw_config.get("status_text", fallback_config["status_text"])),
+        "status_text": status_text,
         "manual_override": bool(raw_config.get("manual_override", fallback_config["manual_override"])),
     }
 
