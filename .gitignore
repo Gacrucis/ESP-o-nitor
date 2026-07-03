@@ -14,3 +14,5 @@ platformio_override.ini
 
 # Mockups y capturas de diseno (no son assets del firmware)
 *.png
+# Excepcion: los previews de las piezas 3D si son assets del repo
+!3d-models/previews/*.png

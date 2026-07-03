@@ -15,7 +15,7 @@ on a service running on the PC; the ESP32 only projects the framebuffers it rece
 | --- | --- |
 | [`esp32/`](esp32/) | ESP32 firmware (PlatformIO, C++). Polls the service, projects the screens, animates activity and shows local screensavers. |
 | [`monitor-service/`](monitor-service/) | Host service (Python). Reads Claude/Codex quota, renders the OLED screens and serves them over HTTP; includes a live configuration web UI. |
-| [`3d-models/`](3d-models/) | Printable enclosure (STEP): case and lid for the ESP32 board plus the base and lid that hold the two screens. |
+| [`3d-models/`](3d-models/) | Printable enclosure (STEP + STL, with PNG previews): case and lid for the ESP32 board plus the base and lids that hold the two screens. |
 
 The root holds shared material: this README and common configuration.
 
