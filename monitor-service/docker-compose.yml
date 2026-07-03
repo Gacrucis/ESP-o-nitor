@@ -1,0 +1,36 @@
+services:
+  monitor-service:
+    build: .
+    # Reiniciar siempre salvo que se detenga manualmente.
+    restart: unless-stopped
+    # Rotacion de logs para evitar crecimiento ilimitado.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "8765:8765"
+    environment:
+      CLAUDE_HOME: /host/claude
+      CODEX_HOME: /host/codex
+      CONFIG_PATH: /app/data/config.json
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: "8765"
+      # Intervalo mínimo entre regeneraciones del cache que consume el ESP32.
+      FRAME_CACHE_TTL_SECONDS: "5"
+      # Intervalo mínimo entre consultas reales al endpoint de uso de Claude.
+      CLAUDE_USAGE_TTL_SECONDS: "300"
+      # Intervalo mínimo entre lecturas locales de rate_limits de Codex.
+      CODEX_USAGE_TTL_SECONDS: "30"
+    volumes:
+      # Zona horaria del host (para la hora local de reset).
+      - /etc/localtime:/etc/localtime:ro
+      # Código montado para hot reloading: editar en el host reinicia el servicio.
+      - ./src:/app/src
+      - ${HOME}/.claude:/host/claude:ro
+      - ${HOME}/.codex:/host/codex:ro
+      - monitor-service-data:/app/data
+
+volumes:
+  monitor-service-data:

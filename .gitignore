@@ -1,0 +1,16 @@
+# Credenciales locales (WiFi, OTA): NUNCA versionar. Ver los *.example.*
+secrets.h
+platformio_override.ini
+
+# Artefactos de compilacion PlatformIO (esp32/.pio)
+.pio/
+
+# Toolchain y entorno local de PlatformIO (esp32/.venv, esp32/.platformio-core)
+.platformio-core/
+.venv/
+
+# Artefactos de herramientas locales
+.playwright-mcp/
+
+# Mockups y capturas de diseno (no son assets del firmware)
+*.png

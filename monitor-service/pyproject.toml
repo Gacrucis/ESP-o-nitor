@@ -1,0 +1,14 @@
+[project]
+name = "esp-o-nitor-service"
+version = "0.1.0"
+description = "Servicio local para alimentar el ESP-o-nitor de uso Claude/Codex"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "watchdog==6.0.0",
+    "pillow==11.0.0",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+
