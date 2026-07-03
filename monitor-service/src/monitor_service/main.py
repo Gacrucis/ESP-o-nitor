@@ -26,19 +26,19 @@ from monitor_service.screensavers import render_screensaver_preview_gif
 from monitor_service.types import ActivityAnimationConfig, RuntimeStatus, ServiceConfig, ToolSnapshot
 from monitor_service.usage import build_snapshot, compute_activity_states
 
-# Factor de escala para el preview PNG en la web (el OLED real es 128x64).
+# Scale factor for the PNG preview on the web (the real OLED is 128x64).
 PREVIEW_SCALE = 3
-FALLBACK_FRAME_DETAIL = "Generando frames"
+FALLBACK_FRAME_DETAIL = "Generating frames"
 
-# Long-poll de actividad: el servidor retiene el GET del ESP hasta que cambia el
-# estado (o hasta el tope), para que reaccione casi al instante sin sondear el frame.
+# Activity long-poll: the server holds the ESP GET until the state changes
+# (or until the cap), so it reacts almost instantly without polling the frame.
 ACTIVITY_LONGPOLL_HOLD_SECONDS = 20.0
 ACTIVITY_LONGPOLL_STEP_SECONDS = 0.25
 
-# Telemetria del ESP para la web: se mide la cadencia con la que el ESP sondea
-# /api/esp/frames (su heartbeat) para estimar si esta conectado y cuando aplicara un
-# cambio recien guardado. Huecos mayores a este tope se tratan como reconexion y no
-# contaminan la cadencia estimada. Ventana minima para considerarlo "en linea".
+# ESP telemetry for the web: measures the cadence at which the ESP polls
+# /api/esp/frames (its heartbeat) to estimate whether it is connected and when a
+# just-saved change will apply. Gaps larger than this cap are treated as reconnection and
+# do not contaminate the estimated cadence. Minimum window to consider it "online".
 ESP_MAX_REASONABLE_GAP_MS = 120000
 ESP_ONLINE_FALLBACK_MS = 30000
 
@@ -48,16 +48,16 @@ _frame_etag = ""
 _frame_updated_at_ms = 0
 _frame_refreshing = False
 _frame_last_error = ""
-# Estados de actividad cacheados junto al frame: el refresco en background ya
-# construye el snapshot, asi que send_frames no debe reconstruirlo en el path
-# critico (cada poll del ESP) y dispararle un timeout de lectura.
+# Activity states cached alongside the frame: the background refresh already
+# builds the snapshot, so send_frames must not rebuild it in the critical
+# path (every ESP poll) and trigger a read timeout.
 _frame_claude_activity = "idle"
 _frame_codex_activity = "idle"
-# Firma de las barras y momento del ultimo cambio, para el atenuado anti burn-in.
+# Bars signature and time of the last change, for the anti burn-in dimming.
 _bars_signature: str | None = None
 _bars_changed_at_ms = 0
 
-# Telemetria del ESP (protegida por su propio lock): heartbeat, cadencia estimada e IP.
+# ESP telemetry (protected by its own lock): heartbeat, estimated cadence and IP.
 _esp_lock = threading.Lock()
 _esp_last_seen_ms = 0
 _esp_last_frames_ms = 0
@@ -66,7 +66,7 @@ _esp_last_anim_fetch_ms = 0
 _esp_ip = ""
 
 APP_HTML = r"""<!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -187,8 +187,8 @@ APP_HTML = r"""<!doctype html>
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22,163,74,.45); } 70% { box-shadow: 0 0 0 8px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
     .theme-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
     .anim-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-    /* El ratio del recuadro es dinamico (lo fija updateAnimPreview segun ancho/alto)
-       para que el preview no se estire. Selector mas especifico que .theme-card img. */
+    /* The box ratio is dynamic (updateAnimPreview sets it based on width/height)
+       so the preview does not stretch. More specific selector than .theme-card img. */
     .anim-gallery .anim-card img { aspect-ratio: 48 / 5; object-fit: contain; }
     .theme-card { text-align: left; cursor: pointer; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); display: grid; gap: 8px; font: inherit; color: inherit; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; animation: fade-in .25s ease; }
     .theme-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
@@ -273,19 +273,19 @@ APP_HTML = r"""<!doctype html>
       </div>
       <nav>
         <button class="active" data-page="home"><svg class="icon"><use href="#i-home"></use></svg>Home</button>
-        <button data-page="usage"><svg class="icon"><use href="#i-gauge"></use></svg>Uso</button>
-        <button data-page="config"><svg class="icon"><use href="#i-sliders"></use></svg>Configuracion</button>
+        <button data-page="usage"><svg class="icon"><use href="#i-gauge"></use></svg>Usage</button>
+        <button data-page="config"><svg class="icon"><use href="#i-sliders"></use></svg>Settings</button>
       </nav>
     </aside>
     <main>
       <header>
         <div>
-          <h1>Claude y Codex</h1>
-          <p>Servicio local para alimentar el monitor ESP32.</p>
+          <h1>Claude and Codex</h1>
+          <p>Local service that feeds the ESP32 monitor.</p>
         </div>
         <div class="pills">
-          <span id="service-pill" class="pill">Cargando</span>
-          <span id="esp-pill" class="pill">ESP sin datos</span>
+          <span id="service-pill" class="pill">Loading</span>
+          <span id="esp-pill" class="pill">ESP no data</span>
         </div>
       </header>
 
@@ -296,39 +296,39 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-cpu"></use></svg></span>
               <div>
-                <h2>Dispositivo ESP32</h2>
-                <p class="section-sub">Conexion en vivo con el monitor</p>
+                <h2>ESP32 device</h2>
+                <p class="section-sub">Live connection with the monitor</p>
               </div>
             </div>
-            <span id="esp-state-pill" class="pill">Sin datos</span>
+            <span id="esp-state-pill" class="pill">No data</span>
           </div>
           <div class="status-grid">
-            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-clock"></use></svg></span><div class="kv-body"><span>Ultimo sondeo</span><strong id="esp-last-seen">-</strong></div></div>
-            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-repeat"></use></svg></span><div class="kv-body"><span>Cadencia de sondeo</span><strong id="esp-interval">-</strong></div></div>
-            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-zap"></use></svg></span><div class="kv-body"><span>Proximo sondeo</span><strong id="esp-next-poll">-</strong></div></div>
+            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-clock"></use></svg></span><div class="kv-body"><span>Last poll</span><strong id="esp-last-seen">-</strong></div></div>
+            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-repeat"></use></svg></span><div class="kv-body"><span>Poll cadence</span><strong id="esp-interval">-</strong></div></div>
+            <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-zap"></use></svg></span><div class="kv-body"><span>Next poll</span><strong id="esp-next-poll">-</strong></div></div>
             <div class="kv"><span class="icon-chip"><svg class="icon"><use href="#i-globe"></use></svg></span><div class="kv-body"><span>IP</span><strong id="esp-ip">-</strong></div></div>
           </div>
-          <p id="esp-effect" class="muted" style="margin:14px 0 0">Los cambios de configuracion se aplican en el proximo sondeo del ESP.</p>
+          <p id="esp-effect" class="muted" style="margin:14px 0 0">Configuration changes apply on the ESP next poll.</p>
         </div>
         <div class="panel">
           <div class="panel-head">
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-monitor"></use></svg></span>
               <div>
-                <h2>Preview pantallas (128x64)</h2>
-                <p class="section-sub">Lo que se renderiza en cada OLED</p>
+                <h2>Screen preview (128x64)</h2>
+                <p class="section-sub">What is rendered on each OLED</p>
               </div>
             </div>
-            <span class="live-dot" title="Actualizando en vivo"></span>
+            <span class="live-dot" title="Updating live"></span>
           </div>
           <div class="preview-grid">
             <div class="preview-tile">
               <div class="preview-name"><svg class="icon"><use href="#i-sparkles"></use></svg>Claude</div>
-              <img id="preview-claude" class="oled-preview" alt="preview claude">
+              <img id="preview-claude" class="oled-preview" alt="claude preview">
             </div>
             <div class="preview-tile">
               <div class="preview-name"><svg class="icon"><use href="#i-terminal"></use></svg>Codex</div>
-              <img id="preview-codex" class="oled-preview" alt="preview codex">
+              <img id="preview-codex" class="oled-preview" alt="codex preview">
             </div>
           </div>
         </div>
@@ -337,8 +337,8 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-code"></use></svg></span>
               <div>
-                <h2>Snapshot para ESP32</h2>
-                <p class="section-sub">JSON que consume el firmware</p>
+                <h2>Snapshot for ESP32</h2>
+                <p class="section-sub">JSON consumed by the firmware</p>
               </div>
             </div>
           </div>
@@ -352,63 +352,63 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-gauge"></use></svg></span>
               <div>
-                <h2>Uso y ventanas</h2>
-                <p class="section-sub">Porcentajes y ventanas de Claude y Codex</p>
+                <h2>Usage and windows</h2>
+                <p class="section-sub">Percentages and windows for Claude and Codex</p>
               </div>
             </div>
           </div>
           <form id="usage-form">
             <div class="form-grid">
-              <label>Claude 5h restante %
+              <label>Claude 5h remaining %
                 <input id="claude-remaining" type="number" min="0" max="100" step="1">
               </label>
-              <label>Claude weekly restante %
+              <label>Claude weekly remaining %
                 <input id="claude-weekly-remaining" type="number" min="0" max="100" step="1">
               </label>
-              <label>Codex 5h restante %
+              <label>Codex 5h remaining %
                 <input id="codex-remaining" type="number" min="0" max="100" step="1">
               </label>
-              <label>Codex weekly restante %
+              <label>Codex weekly remaining %
                 <input id="codex-weekly-remaining" type="number" min="0" max="100" step="1">
               </label>
-              <label>Inicio ventana Claude 5h
+              <label>Claude 5h window start
                 <input id="claude-start" type="datetime-local">
               </label>
-              <label>Reset Claude 5h
+              <label>Claude 5h reset
                 <input id="claude-reset" type="datetime-local">
               </label>
-              <label>Inicio ventana Claude weekly
+              <label>Claude weekly window start
                 <input id="claude-weekly-start" type="datetime-local">
               </label>
-              <label>Reset Claude weekly
+              <label>Claude weekly reset
                 <input id="claude-weekly-reset" type="datetime-local">
               </label>
-              <label>Inicio ventana Codex 5h
+              <label>Codex 5h window start
                 <input id="codex-start" type="datetime-local">
               </label>
-              <label>Reset Codex 5h
+              <label>Codex 5h reset
                 <input id="codex-reset" type="datetime-local">
               </label>
-              <label>Inicio ventana Codex weekly
+              <label>Codex weekly window start
                 <input id="codex-weekly-start" type="datetime-local">
               </label>
-              <label>Reset Codex weekly
+              <label>Codex weekly reset
                 <input id="codex-weekly-reset" type="datetime-local">
               </label>
-              <label>Claude esperando respuesta
+              <label>Claude waiting for response
                 <select id="claude-waiting">
                   <option value="false">No</option>
-                  <option value="true">Si</option>
+                  <option value="true">Yes</option>
                 </select>
               </label>
-              <label>Codex esperando respuesta
+              <label>Codex waiting for response
                 <select id="codex-waiting">
                   <option value="false">No</option>
-                  <option value="true">Si</option>
+                  <option value="true">Yes</option>
                 </select>
               </label>
             </div>
-            <button class="primary" type="submit"><svg class="icon"><use href="#i-save"></use></svg>Guardar uso</button>
+            <button class="primary" type="submit"><svg class="icon"><use href="#i-save"></use></svg>Save usage</button>
           </form>
         </div>
       </section>
@@ -419,42 +419,42 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-sliders"></use></svg></span>
               <div>
-                <h2>Configuracion del servicio</h2>
-                <p class="section-sub">Etiquetas, cache y atenuado anti burn-in</p>
+                <h2>Service settings</h2>
+                <p class="section-sub">Labels, cache and anti burn-in dimming</p>
               </div>
             </div>
           </div>
           <form id="config-form">
             <div class="form-grid">
-              <label>Etiqueta Claude
+              <label>Claude label
                 <input id="claude-label" type="text">
               </label>
-              <label>Etiqueta Codex
+              <label>Codex label
                 <input id="codex-label" type="text">
               </label>
-              <label>Tolerancia %
+              <label>Tolerance %
                 <input id="tolerance" type="number" min="0" max="100" step="1">
               </label>
-              <label>Estado Codex
+              <label>Codex status
                 <input id="codex-status" type="text">
               </label>
-              <label>Cache frames ESP32 (s)
+              <label>ESP32 frame cache (s)
                 <input id="frame-cache-ttl-sec" type="number" min="1" step="1">
               </label>
-              <label>Polling Claude (min)
+              <label>Claude polling (min)
                 <input id="claude-ttl-min" type="number" min="1" step="1">
               </label>
-              <label>Polling Codex (s)
+              <label>Codex polling (s)
                 <input id="codex-ttl-sec" type="number" min="1" step="1">
               </label>
-              <label>Atenuar brillo tras (s, 0=nunca)
+              <label>Dim brightness after (s, 0=never)
                 <input id="dim-after-sec" type="number" min="0" step="10">
               </label>
-              <label>Brillo atenuado (%)
+              <label>Dimmed brightness (%)
                 <input id="dim-pct" type="number" min="0" max="100" step="5">
               </label>
             </div>
-            <button class="primary" type="submit"><svg class="icon"><use href="#i-save"></use></svg>Guardar configuracion</button>
+            <button class="primary" type="submit"><svg class="icon"><use href="#i-save"></use></svg>Save settings</button>
           </form>
         </div>
         <div class="panel">
@@ -462,54 +462,54 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-film"></use></svg></span>
               <div>
-                <h2>Animacion de actividad</h2>
-                <p class="section-sub">Esquina superior derecha cuando Claude o Codex trabaja; al esperar, la pantalla se invierte</p>
+                <h2>Activity animation</h2>
+                <p class="section-sub">Top-right corner when Claude or Codex is working; while waiting, the screen inverts</p>
               </div>
             </div>
           </div>
           <form id="activity-form">
-            <div class="muted" style="margin-bottom:6px">Estilo (clic en el preview para elegir)</div>
+            <div class="muted" style="margin-bottom:6px">Style (click a preview to choose)</div>
             <input id="anim-style" type="hidden">
             <div id="anim-gallery" class="anim-gallery"></div>
             <div class="form-grid" style="margin-top:14px">
-              <label>Velocidad / frame (ms)
+              <label>Speed / frame (ms)
                 <input id="anim-interval" type="number" min="20" step="10">
               </label>
-              <label>Ancho del recuadro (px)
+              <label>Box width (px)
                 <input id="anim-width" type="number" min="8" max="128" step="1">
               </label>
-              <label>Alto del recuadro (px)
+              <label>Box height (px)
                 <input id="anim-height" type="number" min="1" max="16" step="1">
               </label>
-              <label>Invertir pantalla al esperar
+              <label>Invert screen while waiting
                 <select id="anim-invert">
-                  <option value="true">Si</option>
+                  <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
               </label>
-              <label>Parpadeo de inversion (ms)
+              <label>Inversion blink (ms)
                 <input id="anim-blink" type="number" min="100" step="50">
               </label>
-              <label>Ventana ocupado Codex (s)
+              <label>Codex busy window (s)
                 <input id="anim-codex-window" type="number" min="1" step="1">
               </label>
-              <label>Obsoleto tras (s)
+              <label>Stale after (s)
                 <input id="anim-stale" type="number" min="60" step="10">
               </label>
-              <label>Incluir subagentes de Codex
+              <label>Include Codex subagents
                 <select id="anim-codex-subagents">
-                  <option value="true">Si</option>
+                  <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
               </label>
-              <label>Incluir subagentes de Claude
+              <label>Include Claude subagents
                 <select id="anim-claude-subagents">
-                  <option value="true">Si</option>
+                  <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
               </label>
             </div>
-            <button class="primary" type="submit" style="margin-top:14px"><svg class="icon"><use href="#i-save"></use></svg>Guardar animacion</button>
+            <button class="primary" type="submit" style="margin-top:14px"><svg class="icon"><use href="#i-save"></use></svg>Save animation</button>
           </form>
         </div>
         <div class="panel">
@@ -517,8 +517,8 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-palette"></use></svg></span>
               <div>
-                <h2>Temas de pantallas</h2>
-                <p class="section-sub">Clic en un tema para aplicarlo al instante</p>
+                <h2>Screen themes</h2>
+                <p class="section-sub">Click a theme to apply it instantly</p>
               </div>
             </div>
           </div>
@@ -529,8 +529,8 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-shield"></use></svg></span>
               <div>
-                <h2>Salvapantallas (anti burn-in)</h2>
-                <p class="section-sub">A pantalla completa cuando el servicio esta caido. Clic para aplicar</p>
+                <h2>Screensavers (anti burn-in)</h2>
+                <p class="section-sub">Fullscreen when the service is down. Click to apply</p>
               </div>
             </div>
           </div>
@@ -541,8 +541,8 @@ APP_HTML = r"""<!doctype html>
             <div class="section-title">
               <span class="icon-chip"><svg class="icon"><use href="#i-folder"></use></svg></span>
               <div>
-                <h2>Rutas montadas</h2>
-                <p class="section-sub">Diagnostico de rutas y fuentes del servicio</p>
+                <h2>Mounted paths</h2>
+                <p class="section-sub">Diagnostics of service paths and sources</p>
               </div>
             </div>
           </div>
@@ -557,8 +557,8 @@ APP_HTML = r"""<!doctype html>
 
     function $(id) { return document.getElementById(id); }
     let toastTimer = null;
-    // Toast con variantes (loading/success/error/info), titulo y detalle. 'loading' no
-    // se auto-oculta: queda fijo hasta que la operacion termina y lo reemplaza.
+    // Toast with variants (loading/success/error/info), title and detail. 'loading' does
+    // not auto-hide: it stays fixed until the operation finishes and replaces it.
     function setToast(variant, title, detail) {
       const element = $('toast');
       $('toast-title').textContent = title;
@@ -570,7 +570,7 @@ APP_HTML = r"""<!doctype html>
         toastTimer = setTimeout(() => element.classList.remove('show'), variant === 'error' ? 6000 : 3400);
       }
     }
-    // Estado de telemetria del ESP y seguimiento de "cuando toma efecto" un cambio.
+    // ESP telemetry state and tracking of "when a change takes effect".
     let espStatus = null;
     let espStatusAt = 0;
     let pendingEffect = null;
@@ -580,15 +580,15 @@ APP_HTML = r"""<!doctype html>
       if (total < 60) return total + ' s';
       return Math.floor(total / 60) + ' m ' + (total % 60) + ' s';
     }
-    function agoText(ms) { return 'hace ' + secsText(ms); }
+    function agoText(ms) { return secsText(ms) + ' ago'; }
     function effectEstimateText(status) {
-      if (!status || !status.online) return 'El ESP esta sin conexion; se aplicara cuando reconecte.';
+      if (!status || !status.online) return 'The ESP is offline; it will apply when it reconnects.';
       const next = Number(status.next_poll_in_ms);
-      if (next >= 0) return 'Se aplicara en ~' + secsText(next) + ' (proximo sondeo del ESP).';
-      return 'Se aplicara en el proximo sondeo del ESP.';
+      if (next >= 0) return 'Applies in ~' + secsText(next) + ' (ESP next poll).';
+      return 'Applies on the ESP next poll.';
     }
     async function saveConfig(body, label) {
-      setToast('loading', 'Guardando ' + label + '...', 'Enviando al servicio');
+      setToast('loading', 'Saving ' + label + '...', 'Sending to the service');
       try {
         await postJson('/api/config', body);
         let status = null;
@@ -599,10 +599,10 @@ APP_HTML = r"""<!doctype html>
           pendingEffect = { baselineFrames: Number(status.last_frames_ms || 0), label: label };
           renderEspStatus();
         }
-        setToast('success', label + ' guardado', effectEstimateText(status));
+        setToast('success', label + ' saved', effectEstimateText(status));
         await refresh();
       } catch (error) {
-        setToast('error', 'No se pudo guardar ' + label, String(error).slice(0, 160));
+        setToast('error', 'Could not save ' + label, String(error).slice(0, 160));
       }
     }
     function clamp(value) { return Math.max(0, Math.min(100, Number(value || 0))); }
@@ -619,15 +619,15 @@ APP_HTML = r"""<!doctype html>
       return 'warn';
     }
     function paceText(pace) {
-      if (pace === 'over') return 'Usando de mas';
-      if (pace === 'under') return 'Usando de menos';
-      if (pace === 'on_track') return 'En ritmo';
-      return 'Sin datos';
+      if (pace === 'over') return 'Overusing';
+      if (pace === 'under') return 'Underusing';
+      if (pace === 'on_track') return 'On track';
+      return 'No data';
     }
     function activityText(activity) {
-      if (activity === 'busy') return 'Trabajando';
-      if (activity === 'waiting') return 'Esperando respuesta';
-      return 'Inactivo';
+      if (activity === 'busy') return 'Working';
+      if (activity === 'waiting') return 'Waiting for response';
+      return 'Idle';
     }
     function activityClass(activity) {
       if (activity === 'busy') return 'warn';
@@ -636,7 +636,7 @@ APP_HTML = r"""<!doctype html>
     }
     function dateText(ms) {
       const value = Number(ms || 0);
-      if (value <= 0) return 'Sin datos';
+      if (value <= 0) return 'No data';
       return new Date(value).toLocaleString();
     }
     function minutesText(seconds) {
@@ -663,11 +663,11 @@ APP_HTML = r"""<!doctype html>
             <span class="window-label">${label}</span>
             <span class="pill ${paceClass(window.pace, false)}">${paceText(window.pace)}</span>
           </div>
-          <div class="metric"><strong>${Math.round(window.remaining_percent)}%</strong><span class="muted">restante</span></div>
+          <div class="metric"><strong>${Math.round(window.remaining_percent)}%</strong><span class="muted">remaining</span></div>
           <div class="bar"><span style="width:${clamp(window.remaining_percent)}%"></span></div>
           <div class="window-meta">
             <span>${icon('clock')}Reset ${minutesText(window.reset_in_seconds)}</span>
-            <span>${icon('target')}Esperado ${Math.round(window.expected_remaining_percent)}%</span>
+            <span>${icon('target')}Expected ${Math.round(window.expected_remaining_percent)}%</span>
           </div>
         </div>`;
     }
@@ -683,11 +683,11 @@ APP_HTML = r"""<!doctype html>
             <span class="pill has-icon ${activityClass(tool.activity)}">${icon(activityIcon(tool.activity))}${activityText(tool.activity)}</span>
           </div>
           ${renderWindow('5h', tool.current)}
-          ${renderWindow('Semanal', tool.weekly)}
+          ${renderWindow('Weekly', tool.weekly)}
           <div class="subgrid">
-            <div class="kv"><span class="icon-chip">${icon('database')}</span><div class="kv-body"><span>Fuente cuota</span><strong>${tool.source}</strong></div></div>
-            <div class="kv"><span class="icon-chip">${icon('clock')}</span><div class="kv-body"><span>Ultima lectura</span><strong>${dateText(tool.usage_observed_at_ms)}</strong></div></div>
-            <div class="kv"><span class="icon-chip">${icon('message')}</span><div class="kv-body"><span>Mensajes</span><strong>${tool.observed_messages}</strong></div></div>
+            <div class="kv"><span class="icon-chip">${icon('database')}</span><div class="kv-body"><span>Quota source</span><strong>${tool.source}</strong></div></div>
+            <div class="kv"><span class="icon-chip">${icon('clock')}</span><div class="kv-body"><span>Last read</span><strong>${dateText(tool.usage_observed_at_ms)}</strong></div></div>
+            <div class="kv"><span class="icon-chip">${icon('message')}</span><div class="kv-body"><span>Messages</span><strong>${tool.observed_messages}</strong></div></div>
             <div class="kv"><span class="icon-chip">${icon('hash')}</span><div class="kv-body"><span>Tokens</span><strong>${tool.observed_tokens}</strong></div></div>
           </div>
         </article>`;
@@ -707,24 +707,24 @@ APP_HTML = r"""<!doctype html>
     let animGalleryBuilt = false;
     let saverGalleryBuilt = false;
     const SCREENSAVERS = [
-      { id: 'black', label: 'Negro' },
-      { id: 'snake', label: 'Culebra' },
+      { id: 'black', label: 'Black' },
+      { id: 'snake', label: 'Snake' },
       { id: 'pipes', label: 'Pipes' },
       { id: 'matrix', label: 'Matrix' },
       { id: 'dvd', label: 'DVD' },
-      { id: 'maze', label: 'Laberinto' },
+      { id: 'maze', label: 'Maze' },
       { id: 'flower', label: 'Flower Box' }
     ];
     const ANIM_STYLES = [
       { id: 'spinner', label: 'Spinner' },
-      { id: 'dots', label: 'Puntos' },
-      { id: 'dots-right', label: 'Puntos derecha' },
-      { id: 'stars-right', label: 'Estrellas derecha' },
-      { id: 'pulse', label: 'Pulso' },
-      { id: 'bars', label: 'Barras' },
-      { id: 'ball', label: 'Pelota' },
-      { id: 'wave', label: 'Onda' },
-      { id: 'worm', label: 'Gusano' }
+      { id: 'dots', label: 'Dots' },
+      { id: 'dots-right', label: 'Dots right' },
+      { id: 'stars-right', label: 'Stars right' },
+      { id: 'pulse', label: 'Pulse' },
+      { id: 'bars', label: 'Bars' },
+      { id: 'ball', label: 'Ball' },
+      { id: 'wave', label: 'Wave' },
+      { id: 'worm', label: 'Worm' }
     ];
     async function getThemes() {
       if (!themeCache) themeCache = (await loadJson('/api/themes')).themes;
@@ -738,7 +738,7 @@ APP_HTML = r"""<!doctype html>
     async function selectTheme(id) {
       const config = structuredClone(currentConfig);
       config.theme = id;
-      await saveConfig(config, 'Tema');
+      await saveConfig(config, 'Theme');
     }
     async function ensureThemeGallery() {
       if (galleryBuilt) return;
@@ -749,7 +749,7 @@ APP_HTML = r"""<!doctype html>
         card.type = 'button';
         card.className = 'theme-card';
         card.dataset.theme = theme.id;
-        card.innerHTML = '<img alt="' + theme.label + '"><div class="theme-card-label"><span>' + theme.label + '</span><span class="theme-card-badge">' + icon('check') + 'Activo</span></div>';
+        card.innerHTML = '<img alt="' + theme.label + '"><div class="theme-card-label"><span>' + theme.label + '</span><span class="theme-card-badge">' + icon('check') + 'Active</span></div>';
         card.addEventListener('click', () => selectTheme(theme.id));
         gallery.appendChild(card);
       }
@@ -765,7 +765,7 @@ APP_HTML = r"""<!doctype html>
     async function selectScreensaver(id) {
       const config = structuredClone(currentConfig);
       config.screensaver = id;
-      await saveConfig(config, 'Salvapantallas');
+      await saveConfig(config, 'Screensaver');
     }
     function ensureSaverGallery() {
       if (saverGalleryBuilt) return;
@@ -776,8 +776,8 @@ APP_HTML = r"""<!doctype html>
         card.type = 'button';
         card.className = 'theme-card';
         card.dataset.saver = saver.id;
-        // El preview es un GIF que no depende de datos: se carga una vez para que anime.
-        card.innerHTML = '<img alt="' + saver.label + '" src="/api/esp/screensaver-preview.gif?saver=' + saver.id + '"><div class="theme-card-label"><span>' + saver.label + '</span><span class="theme-card-badge">' + icon('check') + 'Activo</span></div>';
+        // The preview is a GIF that does not depend on data: it loads once so it animates.
+        card.innerHTML = '<img alt="' + saver.label + '" src="/api/esp/screensaver-preview.gif?saver=' + saver.id + '"><div class="theme-card-label"><span>' + saver.label + '</span><span class="theme-card-badge">' + icon('check') + 'Active</span></div>';
         card.querySelector('img').addEventListener('load', (event) => event.target.classList.add('loaded'));
         card.addEventListener('click', () => selectScreensaver(saver.id));
         gallery.appendChild(card);
@@ -789,15 +789,15 @@ APP_HTML = r"""<!doctype html>
         card.classList.toggle('active', card.dataset.saver === currentConfig.screensaver);
       });
     }
-    // Refresco periodico: actualiza datos vivos pero NO reescribe los formularios, para
-    // no pisar lo que el usuario esta editando. Los formularios se llenan en refresh().
+    // Periodic refresh: updates live data but does NOT rewrite the forms, to
+    // avoid clobbering what the user is editing. The forms are filled in refresh().
     async function refreshLive() {
       const snapshot = await loadJson('/api/esp/snapshot');
       const status = await loadJson('/api/status');
       currentConfig = await loadJson('/api/config');
       await ensureThemeGallery();
       ensureSaverGallery();
-      $('service-pill').textContent = 'Servicio online';
+      $('service-pill').textContent = 'Service online';
       $('service-pill').className = 'pill ok';
       $('cards').innerHTML = renderTool(snapshot.claude) + renderTool(snapshot.codex);
       $('snapshot-json').textContent = JSON.stringify(snapshot, null, 2);
@@ -808,7 +808,7 @@ APP_HTML = r"""<!doctype html>
       updateThemeGallery(stamp);
       updateSaverGallery();
     }
-    // Refresco completo: ademas rellena los formularios (carga inicial y tras guardar).
+    // Full refresh: also fills the forms (initial load and after saving).
     async function refresh() {
       await refreshLive();
       if (currentConfig) fillForms(currentConfig);
@@ -818,21 +818,21 @@ APP_HTML = r"""<!doctype html>
         const status = await loadJson('/api/esp/status');
         espStatus = status;
         espStatusAt = Date.now();
-        // Confirmacion real: el ESP sondeo frames despues de guardar -> el cambio ya aplico.
+        // Real confirmation: the ESP polled frames after saving -> the change already applied.
         if (pendingEffect && Number(status.last_frames_ms) > Number(pendingEffect.baselineFrames)) {
-          setToast('success', 'Aplicado en el ESP', pendingEffect.label + ' ya esta activo en el dispositivo.');
+          setToast('success', 'Applied on the ESP', pendingEffect.label + ' is now active on the device.');
           pendingEffect = null;
         }
         renderEspStatus();
-      } catch (error) { /* el servicio puede estar reiniciando; se reintenta */ }
+      } catch (error) { /* the service may be restarting; it retries */ }
     }
     function renderEspStatus() {
       const pill = $('esp-pill');
       const statePill = $('esp-state-pill');
       if (!espStatus || !espStatus.last_seen_ms) {
-        pill.textContent = 'ESP sin datos';
+        pill.textContent = 'ESP no data';
         pill.className = 'pill';
-        statePill.textContent = 'Sin datos';
+        statePill.textContent = 'No data';
         statePill.className = 'pill';
         $('esp-last-seen').textContent = '-';
         $('esp-interval').textContent = '-';
@@ -844,28 +844,28 @@ APP_HTML = r"""<!doctype html>
       const age = now - espStatus.last_seen_ms;
       const window = Math.max(30000, Number(espStatus.poll_interval_ms || 0) * 3 + 8000);
       const online = age <= window;
-      pill.textContent = (online ? 'ESP conectado · ' : 'ESP sin conexion · ') + agoText(age);
+      pill.textContent = (online ? 'ESP connected · ' : 'ESP offline · ') + agoText(age);
       pill.className = 'pill ' + (online ? 'ok' : 'danger');
-      statePill.textContent = online ? 'Conectado' : 'Sin conexion';
+      statePill.textContent = online ? 'Connected' : 'Offline';
       statePill.className = 'pill ' + (online ? 'ok' : 'danger');
       $('esp-last-seen').textContent = agoText(age);
-      $('esp-interval').textContent = espStatus.poll_interval_ms > 0 ? '~' + secsText(espStatus.poll_interval_ms) : 'Estimando...';
+      $('esp-interval').textContent = espStatus.poll_interval_ms > 0 ? '~' + secsText(espStatus.poll_interval_ms) : 'Estimating...';
       let next = Number(espStatus.next_poll_in_ms);
       if (next >= 0) {
         next = Math.max(0, next - (now - espStatus.server_now_ms));
-        $('esp-next-poll').textContent = online ? '~' + secsText(next) : 'En pausa';
+        $('esp-next-poll').textContent = online ? '~' + secsText(next) : 'Paused';
       } else {
-        $('esp-next-poll').textContent = 'Desconocido';
+        $('esp-next-poll').textContent = 'Unknown';
       }
       $('esp-ip').textContent = espStatus.ip || '-';
       const effect = $('esp-effect');
       if (pendingEffect) {
         statePill.classList.add('pending');
         effect.textContent = online
-          ? 'Pendiente: ' + pendingEffect.label + ' — se aplicara en ~' + secsText(next >= 0 ? next : 0) + '.'
-          : 'Pendiente: ' + pendingEffect.label + ' — esperando reconexion del ESP.';
+          ? 'Pending: ' + pendingEffect.label + ' - applies in ~' + secsText(next >= 0 ? next : 0) + '.'
+          : 'Pending: ' + pendingEffect.label + ' - waiting for ESP to reconnect.';
       } else {
-        effect.textContent = 'Los cambios de configuracion se aplican en el proximo sondeo del ESP.';
+        effect.textContent = 'Configuration changes apply on the ESP next poll.';
       }
     }
     function fillForms(config) {
@@ -914,7 +914,7 @@ APP_HTML = r"""<!doctype html>
         card.type = 'button';
         card.className = 'theme-card anim-card';
         card.dataset.style = style.id;
-        card.innerHTML = '<img alt="' + style.label + '"><div class="theme-card-label"><span>' + style.label + '</span><span class="theme-card-badge">' + icon('check') + 'Activo</span></div>';
+        card.innerHTML = '<img alt="' + style.label + '"><div class="theme-card-label"><span>' + style.label + '</span><span class="theme-card-badge">' + icon('check') + 'Active</span></div>';
         card.addEventListener('click', () => selectAnimStyle(style.id));
         gallery.appendChild(card);
       }
@@ -988,21 +988,21 @@ APP_HTML = r"""<!doctype html>
     });
     $('usage-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      saveConfig(configFromForms(), 'Uso');
+      saveConfig(configFromForms(), 'Usage');
     });
     $('config-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      saveConfig(configFromForms(), 'Configuracion');
+      saveConfig(configFromForms(), 'Settings');
     });
     $('activity-form').addEventListener('submit', (event) => {
       event.preventDefault();
-      saveConfig(configFromForms(), 'Animacion');
+      saveConfig(configFromForms(), 'Animation');
     });
     $('anim-interval').addEventListener('input', updateAnimPreview);
     $('anim-width').addEventListener('input', updateAnimPreview);
     $('anim-height').addEventListener('input', updateAnimPreview);
     function markServiceError(error) {
-      $('service-pill').textContent = 'Servicio con error';
+      $('service-pill').textContent = 'Service error';
       $('service-pill').className = 'pill danger';
       if (error !== undefined) $('snapshot-json').textContent = String(error);
     }
@@ -1041,7 +1041,7 @@ def get_service_status() -> RuntimeStatus:
 
 
 def record_esp_seen(ip: str) -> None:
-    # Heartbeat ligero para endpoints del ESP que no son el sondeo de frames.
+    # Lightweight heartbeat for ESP endpoints that are not the frames poll.
     global _esp_last_seen_ms, _esp_ip
     with _esp_lock:
         _esp_last_seen_ms = now_ms()
@@ -1050,8 +1050,8 @@ def record_esp_seen(ip: str) -> None:
 
 
 def record_esp_frames_poll(ip: str) -> None:
-    # Registra el sondeo de frames (heartbeat principal) y estima la cadencia con una
-    # media exponencial, ignorando huecos largos (reconexiones) para no sesgarla.
+    # Records the frames poll (main heartbeat) and estimates the cadence with an
+    # exponential average, ignoring long gaps (reconnections) so it is not biased.
     global _esp_last_seen_ms, _esp_last_frames_ms, _esp_frames_interval_ms, _esp_ip
     current_ms = now_ms()
     with _esp_lock:
@@ -1068,7 +1068,7 @@ def record_esp_frames_poll(ip: str) -> None:
 
 
 def record_esp_anim_fetch(ip: str) -> None:
-    # El ESP descargo el paquete de animacion: confirma que aplico ese cambio.
+    # The ESP downloaded the animation package: confirms it applied that change.
     global _esp_last_anim_fetch_ms, _esp_last_seen_ms, _esp_ip
     with _esp_lock:
         current_ms = now_ms()
@@ -1079,8 +1079,8 @@ def record_esp_anim_fetch(ip: str) -> None:
 
 
 def get_esp_status() -> dict[str, object]:
-    # Estado del ESP para la web: si esta en linea, hace cuanto se le vio, cadencia de
-    # sondeo y cuanto falta para el proximo (cuando aplicara un cambio recien guardado).
+    # ESP status for the web: whether it is online, how long ago it was seen, poll
+    # cadence and how long until the next one (when a just-saved change will apply).
     config = load_config()
     current_ms = now_ms()
     with _esp_lock:
@@ -1117,18 +1117,18 @@ def dumps_json(value: object) -> bytes:
 def read_request_json(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     content_length = int(handler.headers.get("Content-Length", "0"))
     if content_length <= 0:
-        raise RuntimeError("El cuerpo JSON está vacío")
+        raise RuntimeError("The JSON body is empty")
 
     raw_body = handler.rfile.read(content_length)
     try:
         value = json.loads(raw_body.decode("utf-8"))
     except UnicodeDecodeError as error:
-        raise RuntimeError(f"El cuerpo no está codificado en UTF-8: {error}") from error
+        raise RuntimeError(f"The body is not UTF-8 encoded: {error}") from error
     except JSONDecodeError as error:
-        raise RuntimeError(f"JSON inválido: {error}") from error
+        raise RuntimeError(f"Invalid JSON: {error}") from error
 
     if not isinstance(value, dict):
-        raise RuntimeError("El cuerpo debe ser un objeto JSON")
+        raise RuntimeError("The body must be a JSON object")
 
     return cast(dict[str, Any], value)
 
@@ -1142,9 +1142,9 @@ def build_snapshot_response() -> dict[str, object]:
 
 
 def bars_signature(claude_snapshot: ToolSnapshot, codex_snapshot: ToolSnapshot) -> str:
-    # Firma de las barras de uso (porcentaje restante de cada ventana, redondeado).
-    # Sirve para detectar cuando las barras NO cambian, sin confundirse con el reloj
-    # de reset que sí cambia cada minuto.
+    # Signature of the usage bars (remaining percent of each window, rounded).
+    # Used to detect when the bars do NOT change, without being confused by the reset
+    # clock that does change every minute.
     return ",".join(
         str(round(window["remaining_percent"]))
         for window in (
@@ -1157,14 +1157,14 @@ def bars_signature(claude_snapshot: ToolSnapshot, codex_snapshot: ToolSnapshot) 
 
 
 def build_frames_payload() -> tuple[bytes, str, str, str, str]:
-    # Construye el snapshot una sola vez y deriva imagenes + estados de actividad,
-    # para que el path critico de /api/esp/frames no tenga que reconstruirlo.
+    # Builds the snapshot once and derives images + activity states,
+    # so the critical path of /api/esp/frames does not have to rebuild it.
     config = load_config()
     claude_home = get_readonly_home("CLAUDE_HOME")
     codex_home = get_readonly_home("CODEX_HOME")
     snapshot = build_snapshot(config, claude_home, codex_home)
     theme = config["theme"]
-    # El recuadro reservado debe coincidir con el tamaño de la animación configurada.
+    # The reserved box must match the size of the configured animation.
     anim = config["activity_animation"]
     set_activity_box(anim["frame_width"], anim["frame_height"])
 
@@ -1173,7 +1173,7 @@ def build_frames_payload() -> tuple[bytes, str, str, str, str]:
     claude_image = render_tool_image(claude_snapshot["label"], claude_snapshot, theme)
     codex_image = render_tool_image(codex_snapshot["label"], codex_snapshot, theme)
 
-    # Concatena los dos framebuffers (claude + codex) y calcula su ETag.
+    # Concatenates the two framebuffers (claude + codex) and computes its ETag.
     payload = pack_frame(claude_image) + pack_frame(codex_image)
     etag = '"' + hashlib.sha1(payload).hexdigest() + '"'
 
@@ -1184,11 +1184,11 @@ def load_oled_font() -> ImageFont.ImageFont:
     try:
         return ImageFont.load_default()
     except OSError as error:
-        raise RuntimeError(f"No se pudo cargar la fuente OLED por defecto: {error}") from error
+        raise RuntimeError(f"Could not load the default OLED font: {error}") from error
 
 
 def wrap_text(text: str, draw: ImageDraw.ImageDraw, font: ImageFont.ImageFont, max_width: int, max_lines: int) -> list[str]:
-    # Envuelve por palabras dentro de max_width px, hasta max_lines lineas.
+    # Wraps by words within max_width px, up to max_lines lines.
     lines: list[str] = []
     current = ""
     for word in text.split():
@@ -1206,8 +1206,8 @@ def wrap_text(text: str, draw: ImageDraw.ImageDraw, font: ImageFont.ImageFont, m
 
 
 def draw_boot_screen(is_claude: bool, detail: str) -> Image.Image:
-    # Misma estética que el arranque del firmware (marco + mascot) para que el estado
-    # "esperando cache" no se vea como una pantalla distinta.
+    # Same look as the firmware boot (frame + mascot) so the
+    # "waiting for cache" state does not look like a different screen.
     image = Image.new("1", (WIDTH, HEIGHT), 0)
     draw_boot_decor(image, is_claude)
     draw = ImageDraw.Draw(image)
@@ -1216,7 +1216,7 @@ def draw_boot_screen(is_claude: bool, detail: str) -> Image.Image:
     name_width = int(draw.textlength(name, font=font))
     draw.text((BOOT_MASCOT_CX - name_width // 2, 42), name, font=font, fill=1)
     log_width = WIDTH - BOOT_LOG_X - 3
-    lines = ["Esperando", "cache..."] + wrap_text(detail, draw, font, log_width, 2)
+    lines = ["Waiting", "cache..."] + wrap_text(detail, draw, font, log_width, 2)
     for index, line in enumerate(lines):
         draw.text((BOOT_LOG_X, 6 + index * 12), line, font=font, fill=1)
 
@@ -1253,7 +1253,7 @@ def refresh_frame_cache(reason: str) -> None:
             _frame_etag = etag
             _frame_claude_activity = claude_activity
             _frame_codex_activity = codex_activity
-            # Solo se reinicia el reloj de atenuado cuando las BARRAS cambian de verdad.
+            # The dimming clock only resets when the BARS actually change.
             if signature != _bars_signature:
                 _bars_signature = signature
                 _bars_changed_at_ms = refreshed_ms
@@ -1320,10 +1320,10 @@ def current_activity_states() -> tuple[str, str]:
 def current_activity_and_counts(
     config: ServiceConfig, claude_home: Path, codex_home: Path, current_ms: int
 ) -> tuple[str, str, int, int]:
-    # Actividad (idle/busy/waiting) y conteo de sesiones busy de cada herramienta, en una sola
-    # llamada que reusa config/homes ya cargados (evita recargarlos por separado en el path de
-    # frames). El conteo de Codex sale del mismo recorrido cacheado que la actividad, asi que no
-    # vuelve a escanear los rollouts.
+    # Activity (idle/busy/waiting) and count of busy sessions for each tool, in a single
+    # call that reuses already-loaded config/homes (avoids reloading them separately in the
+    # frames path). The Codex count comes from the same cached pass as the activity, so it
+    # does not scan the rollouts again.
     anim_config = config["activity_animation"]
     stale_seconds = anim_config["stale_seconds"]
     claude_activity, codex_activity = compute_activity_states(config, claude_home, codex_home, current_ms)
@@ -1339,8 +1339,8 @@ def current_activity_and_counts(
 
 
 def current_brightness_percent(config: ServiceConfig) -> int:
-    # 100% normalmente; baja a dim_brightness_percent cuando las barras llevan mas de
-    # dim_after_seconds sin cambiar. dim_after_seconds=0 desactiva el atenuado.
+    # 100% normally; drops to dim_brightness_percent when the bars have gone more than
+    # dim_after_seconds without changing. dim_after_seconds=0 disables the dimming.
     dim_after = config["dim_after_seconds"]
     if dim_after <= 0:
         return 100
@@ -1354,8 +1354,8 @@ def current_brightness_percent(config: ServiceConfig) -> int:
 
 
 def wait_for_activity_change(prev_claude: str, prev_codex: str) -> tuple[str, str]:
-    # Bloquea el hilo de ESTE request (ThreadingHTTPServer da uno por conexion) hasta
-    # que el estado difiera del que el ESP ya conoce, o hasta el tope de espera.
+    # Blocks the thread of THIS request (ThreadingHTTPServer gives one per connection) until
+    # the state differs from what the ESP already knows, or until the wait cap.
     deadline = time.monotonic() + ACTIVITY_LONGPOLL_HOLD_SECONDS
     while True:
         claude_activity, codex_activity = current_activity_states()
@@ -1386,7 +1386,7 @@ def render_preview_png(tool_id: str, theme: str) -> bytes:
 
 
 def parse_int_query(raw_value: str, fallback: int) -> int:
-    # Convierte un parámetro de query a entero o cae al valor base si está vacío/roto.
+    # Converts a query parameter to integer or falls back to the base value if empty/broken.
     if raw_value == "":
         return fallback
     try:
@@ -1396,8 +1396,8 @@ def parse_int_query(raw_value: str, fallback: int) -> int:
 
 
 def build_preview_animation_config(style: str, interval_raw: str, width_raw: str, height_raw: str) -> ActivityAnimationConfig:
-    # Config efímera para previsualizar estilo/velocidad/tamaño sin guardarlos todavía.
-    # Se normaliza para que el preview respete los mismos límites que la config real.
+    # Ephemeral config to preview style/speed/size without saving them yet.
+    # It is normalized so the preview respects the same limits as the real config.
     base = load_config()["activity_animation"]
     effective_style = style if style in ACTIVITY_ANIMATION_STYLES else base["style"]
 
@@ -1417,8 +1417,8 @@ def build_preview_animation_config(style: str, interval_raw: str, width_raw: str
 def save_config_from_payload(payload: dict[str, Any]) -> ServiceConfig:
     config = normalize_config(payload)
     save_config(config)
-    # Reconstruye el frame de inmediato para que el cambio (tema, uso, brillo) este listo
-    # en cache antes del proximo sondeo del ESP y aplique en una sola pasada.
+    # Rebuilds the frame immediately so the change (theme, usage, brightness) is ready
+    # in cache before the next ESP poll and applies in a single pass.
     start_frame_cache_refresh("config_changed")
 
     return config
@@ -1443,20 +1443,20 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
         self.send_json(status_code, {"status": "error", "message": message})
 
     def send_frames(self) -> None:
-        # Captura la IP del ESP32 (cliente) para mostrarla en el header.
+        # Captures the ESP32 (client) IP to show it in the header.
         client_ip = self.client_address[0]
         set_device_ip(client_ip if len(client_ip.split(".")) == 4 else "")
-        # Heartbeat principal: este sondeo marca la cadencia con la que el ESP aplica cambios.
+        # Main heartbeat: this poll sets the cadence at which the ESP applies changes.
         record_esp_frames_poll(client_ip)
 
-        # La IMAGEN del frame sale del cache (su render es lo caro y disparaba timeouts
-        # HTTPC_ERROR_READ_TIMEOUT si se reconstruia por poll). La ACTIVIDAD y el conteo de
-        # sesiones, en cambio, se calculan frescos (baratos, con el escaneo de Codex cacheado):
-        # asi el header X-Act coincide con el long-poll en tiempo real y el ESP no parpadea
-        # entre el frame cacheado (hasta 5s viejo) y la reaccion viva.
+        # The frame IMAGE comes from the cache (its render is the expensive part and triggered
+        # HTTPC_ERROR_READ_TIMEOUT timeouts if rebuilt per poll). The ACTIVITY and the session
+        # count, in contrast, are computed fresh (cheap, with the Codex scan cached):
+        # this way the X-Act header matches the real-time long-poll and the ESP does not flicker
+        # between the cached frame (up to 5s old) and the live reaction.
         payload, etag, cache_status, _cached_claude_activity, _cached_codex_activity = get_frame_payload_for_esp()
-        # La config y los homes se cargan una sola vez y se reusan para actividad, conteos,
-        # animacion, saver y brillo (antes se recargaban por separado en cada uno).
+        # The config and homes are loaded once and reused for activity, counts,
+        # animation, saver and brightness (before they were reloaded separately in each one).
         config = load_config()
         claude_home = get_readonly_home("CLAUDE_HOME")
         codex_home = get_readonly_home("CODEX_HOME")
@@ -1464,12 +1464,12 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
             config, claude_home, codex_home, now_ms()
         )
 
-        # La versión de la animación y el salvapantallas elegido viajan en headers para
-        # que el ESP los reciba incluso en 304 (y guarde el saver para usarlo offline).
+        # The animation version and the chosen screensaver travel in headers so
+        # the ESP receives them even on 304 (and saves the saver to use it offline).
         anim_etag = activity_animation_etag(config["activity_animation"])
         anim_style = config["activity_animation"]["style"]
         saver = config["screensaver"]
-        # El servicio decide el brillo (conoce las barras reales) y el ESP solo lo aplica.
+        # The service decides the brightness (it knows the real bars) and the ESP only applies it.
         brightness = str(current_brightness_percent(config))
 
         if self.headers.get("If-None-Match") == etag:
@@ -1514,7 +1514,7 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
         self.send_bytes(200, "image/png", render_preview_png(tool_id, theme_values[0]))
 
     def send_activity_animation(self) -> None:
-        # Paquete binario que el ESP32 descarga y almacena (frames + parámetros).
+        # Binary package that the ESP32 downloads and stores (frames + parameters).
         record_esp_anim_fetch(self.client_address[0])
         anim_config = load_config()["activity_animation"]
         etag = activity_animation_etag(anim_config)
@@ -1539,8 +1539,8 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
             log_event("esp_activity_animation_client_disconnected", detail=str(error))
 
     def send_activity_wait(self) -> None:
-        # Long-poll: responde apenas la actividad cambia respecto a lo que el ESP envia
-        # en ?c=<claude>&x=<codex>, o tras el tope de espera. Cuerpo minimo "<c> <x>".
+        # Long-poll: responds as soon as the activity changes from what the ESP sends
+        # in ?c=<claude>&x=<codex>, or after the wait cap. Minimal body "<c> <x>".
         record_esp_seen(self.client_address[0])
         query = parse_qs(urlparse(self.path).query)
         prev_claude = query.get("c", [""])[0]
@@ -1631,7 +1631,7 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
                 self.send_screensaver_preview()
                 return
 
-            self.send_error_json(404, f"Ruta no encontrada: {parsed_path}")
+            self.send_error_json(404, f"Route not found: {parsed_path}")
         except RuntimeError as error:
             self.send_error_json(500, str(error))
 
@@ -1651,7 +1651,7 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
                 self.send_json(200, updated_config)
                 return
 
-            self.send_error_json(404, f"Ruta no encontrada: {parsed_path}")
+            self.send_error_json(404, f"Route not found: {parsed_path}")
         except RuntimeError as error:
             self.send_error_json(400, str(error))
 
@@ -1663,13 +1663,13 @@ def run_server() -> NoReturn:
     raw_host = os.environ.get("SERVICE_HOST")
     raw_port = os.environ.get("SERVICE_PORT")
     if raw_host is None or raw_host == "":
-        raise RuntimeError("SERVICE_HOST no está configurado")
+        raise RuntimeError("SERVICE_HOST is not configured")
     if raw_port is None or raw_port == "":
-        raise RuntimeError("SERVICE_PORT no está configurado")
+        raise RuntimeError("SERVICE_PORT is not configured")
 
     server_address = (raw_host, int(raw_port))
     server = ThreadingHTTPServer(server_address, MonitorRequestHandler)
-    print(f"Servicio iniciado en http://{raw_host}:{raw_port}")
+    print(f"Service started at http://{raw_host}:{raw_port}")
     server.serve_forever()
 
 

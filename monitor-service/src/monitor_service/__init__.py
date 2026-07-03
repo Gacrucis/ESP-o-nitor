@@ -1,2 +1,2 @@
-"""Servicio local para el monitor ESP32."""
+"""Local service for the ESP32 monitor."""
 

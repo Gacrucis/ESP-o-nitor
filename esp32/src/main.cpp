@@ -11,9 +11,9 @@
 #include <WiFi.h>
 #include <Wire.h>
 
-// Credenciales locales: copia include/secrets.example.h a include/secrets.h (ignorado por
-// git) y pon ahi tu WiFi y clave OTA. Sin ese archivo se usan defaults vacios y el ESP
-// arranca en el AP de emergencia para configurarse desde su web.
+// Local credentials: copy include/secrets.example.h to include/secrets.h (git-ignored)
+// and put your WiFi and OTA password there. Without that file, empty defaults are used
+// and the ESP boots into the emergency AP to be configured from its web page.
 #if __has_include("secrets.h")
 #include "secrets.h"
 #endif
@@ -34,24 +34,24 @@ const uint16_t OLED_WIDTH = 128;
 const uint16_t OLED_HEIGHT = 64;
 const uint32_t WIFI_RETRY_DELAY_MS = 500;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
-// Margen sobre el default de 5s del HTTPClient: el servicio puede tardar varios
-// segundos en construir un frame nuevo (cache miss) y un timeout corto provoca
-// HTTPC_ERROR_READ_TIMEOUT (-11) y deja la pantalla en modo elipsis.
+// Margin over the HTTPClient 5s default: the service can take several seconds to
+// build a new frame (cache miss) and a short timeout triggers
+// HTTPC_ERROR_READ_TIMEOUT (-11) and leaves the screen in ellipsis mode.
 const uint16_t HTTP_CLIENT_TIMEOUT_MS = 15000;
-// Timeout de conexion separado y corto: si el host del servicio esta apagado (no
-// rechaza, simplemente no responde el SYN), connect() se bloquea hasta agotar el
-// timeout. Con el salvapantallas activo eso congela la animacion, asi que la sonda
-// debe fallar rapido y dejar el read timeout largo solo para frames lentos.
+// Separate short connect timeout: if the service host is powered off (does not
+// reject, it simply never answers the SYN), connect() blocks until the timeout
+// expires. With the screensaver active that freezes the animation, so the probe
+// must fail fast and keep the long read timeout only for slow frames.
 const uint16_t HTTP_CONNECT_TIMEOUT_MS = 2000;
-// Long-poll de actividad: conexion no bloqueante que el ESP mantiene abierta para
-// reaccionar al instante (pensando/termino/requiere atencion) sin sondear el frame.
+// Activity long-poll: non-blocking connection the ESP keeps open to react
+// instantly (thinking/done/needs attention) without polling the frame.
 const uint16_t ACTIVITY_CONNECT_TIMEOUT_MS = 3000;
 const uint32_t ACTIVITY_LONGPOLL_TIMEOUT_MS = 30000;
 const uint32_t ACTIVITY_LONGPOLL_RETRY_MS = 1000;
 const size_t ACTIVITY_RESPONSE_MAX_BYTES = 512;
 
-// Salvapantallas (anti burn-in cuando el servicio esta caido). Ids alineados con el
-// servicio (config SCREENSAVERS) y el header X-Saver.
+// Screensaver (anti burn-in when the service is down). Ids aligned with the
+// service (config SCREENSAVERS) and the X-Saver header.
 const uint8_t SAVER_BLACK = 0;
 const uint8_t SAVER_SNAKE = 1;
 const uint8_t SAVER_PIPES = 2;
@@ -60,7 +60,7 @@ const uint8_t SAVER_DVD = 4;
 const uint8_t SAVER_MAZE = 5;
 const uint8_t SAVER_FLOWER = 6;
 const uint8_t SAVER_DEFAULT = SAVER_DVD;
-// Tras este tiempo sin servicio, el ESP cambia a salvapantallas en vez de imagen fija.
+// After this time without service, the ESP switches to the screensaver instead of a fixed image.
 const uint32_t SAVER_GRACE_MS = 15000;
 const uint32_t SAVER_FRAME_MS = 40;
 const uint32_t RESTART_DELAY_MS = 1200;
@@ -79,31 +79,31 @@ const char DEFAULT_SERVICE_URL[] = "http://192.168.1.75:8765";
 const size_t SERIAL_LOG_MAX_LENGTH = 8000;
 const uint8_t BOOT_LOG_MAX_LINES = 8;
 const uint8_t BOOT_LOG_MAX_CHARS = 21;
-// Pantalla de arranque: mascot a la izquierda + logs a la derecha dentro de un marco.
-const int16_t BOOT_MASCOT_CX = 22;       // centro X de la columna del mascot
-const int16_t BOOT_MASCOT_CY = 24;       // centro Y del mascot
-const int16_t BOOT_DIVIDER_X = 43;       // divisor vertical entre mascot y logs
-const int16_t BOOT_LOG_X = 47;           // inicio horizontal de los logs
-const int16_t BOOT_LOG_TOP = 4;          // margen superior de los logs
-const uint8_t BOOT_LOG_LINE_CHARS = 13;  // caracteres por linea junto al mascot
-const uint8_t BOOT_LOG_LINE_COUNT = 7;   // lineas de log visibles junto al mascot
+// Boot screen: mascot on the left + logs on the right inside a frame.
+const int16_t BOOT_MASCOT_CX = 22;       // X center of the mascot column
+const int16_t BOOT_MASCOT_CY = 24;       // Y center of the mascot
+const int16_t BOOT_DIVIDER_X = 43;       // vertical divider between mascot and logs
+const int16_t BOOT_LOG_X = 47;           // horizontal start of the logs
+const int16_t BOOT_LOG_TOP = 4;          // top margin of the logs
+const uint8_t BOOT_LOG_LINE_CHARS = 13;  // characters per line next to the mascot
+const uint8_t BOOT_LOG_LINE_COUNT = 7;   // visible log lines next to the mascot
 
-// Recuadro reservado en la esquina superior derecha para la animacion de actividad.
-// El tamano real (ancho x alto) llega en la cabecera del paquete que envia el servicio
-// (frame_width/frame_height de la config) para poder ajustarlo dinamicamente. El recuadro
-// se ancla al borde derecho: X = OLED_WIDTH - frameW, Y = 0.
+// Box reserved in the top-right corner for the activity animation.
+// The real size (width x height) arrives in the header of the packet the service sends
+// (frame_width/frame_height from config) so it can be adjusted dynamically. The box
+// is anchored to the right edge: X = OLED_WIDTH - frameW, Y = 0.
 const uint16_t ACTIVITY_BOX_Y = 0;
-// Tope que el firmware acepta del paquete (debe coincidir con ANIM_FRAME_MAX_* del
-// servicio). Si el servicio pide mas, el paquete se descarta como fuera de rango.
+// Cap the firmware accepts from the packet (must match ANIM_FRAME_MAX_* on the
+// service). If the service asks for more, the packet is dropped as out of range.
 const uint16_t ACTIVITY_BOX_MAX_W = OLED_WIDTH;
 const uint16_t ACTIVITY_BOX_MAX_H = 16;
 
-// Paquete binario de la animacion que el ESP descarga y almacena (no se reflashea).
+// Binary animation packet the ESP downloads and stores (not reflashed).
 const uint8_t ANIM_PACK_MAGIC = 0xA1;
 const uint8_t ANIM_PACK_VERSION = 1;
 const uint8_t ANIM_PACK_HEADER_BYTES = 10;
-// Buffer dimensionado para el recuadro maximo configurable (128x16) con el maximo de
-// frames (32, estilo worm): ceil(128/8)*16*32 = 8192 bytes.
+// Buffer sized for the maximum configurable box (128x16) with the maximum number of
+// frames (32, worm style): ceil(128/8)*16*32 = 8192 bytes.
 const size_t ANIM_MAX_BYTES = 8192;
 const uint8_t ANIM_MAX_FRAMES = 32;
 
@@ -154,11 +154,11 @@ bool codexDisplayReady = false;
 bool webOtaError = false;
 bool webOtaRestartPending = false;
 uint32_t webOtaRestartAtMs = 0;
-String webOtaStatus = "Listo para cargar firmware.";
+String webOtaStatus = "Ready to upload firmware.";
 size_t webOtaBytes = 0;
 String serialLogBuffer = "";
 
-// Framebuffers que el PC dibuja y el ESP32 solo proyecta (128x64 = 1024 bytes).
+// Framebuffers the PC draws and the ESP32 only projects (128x64 = 1024 bytes).
 const size_t FRAME_BYTES = 1024;
 const size_t FRAMES_TOTAL_BYTES = FRAME_BYTES * 2;
 uint8_t claudeFrame[FRAME_BYTES];
@@ -167,7 +167,7 @@ bool framesReceived = false;
 String frameEtag = "";
 uint8_t ellipsisStep = 0;
 
-// Animacion de actividad: frames + parametros que el servicio define y el ESP almacena.
+// Activity animation: frames + parameters the service defines and the ESP stores.
 struct ActivityAnimation
 {
     bool valid;
@@ -180,7 +180,7 @@ struct ActivityAnimation
     bool invertOnWaiting;
 };
 
-// Estado runtime de la animacion/inversion por pantalla fisica.
+// Runtime state of the animation/inversion per physical screen.
 struct DisplayActivityRuntime
 {
     bool animActive;
@@ -193,18 +193,18 @@ struct DisplayActivityRuntime
 uint8_t animFrameData[ANIM_MAX_BYTES];
 ActivityAnimation activityAnimation = {false, 0, 0, 0, 0, 120, 600, true};
 String activityAnimationEtag = "";
-// Ultima version de animacion anunciada por el servicio; si difiere, se re-descarga.
+// Latest animation version announced by the service; if it differs, it is re-downloaded.
 String pendingAnimEtag = "";
-// Estado de actividad por contenido segun lo reporta el servicio (idle/busy/waiting).
+// Per-content activity state as reported by the service (idle/busy/waiting).
 String claudeContentActivity = "idle";
 String codexContentActivity = "idle";
-// Sesiones trabajando (busy) en paralelo por herramienta, segun headers X-Sessions-*.
-// Determinan cuantos puntos dibuja el ESP en el borde derecho: 2 puntos por sesion.
+// Sessions working (busy) in parallel per tool, per the X-Sessions-* headers.
+// They determine how many dots the ESP draws on the right edge: 2 dots per session.
 uint8_t claudeBusySessions = 1;
 uint8_t codexBusySessions = 1;
-// Estilo de animacion de actividad configurado en el servicio (header X-Anim-Style). Los
-// estilos discretos (dots, dots-right, stars-right, bars) codifican el conteo de sesiones;
-// el resto (spinner, pulse, ball, wave, worm) se reproducen como animacion pura del paquete.
+// Activity animation style configured on the service (X-Anim-Style header). The
+// discrete styles (dots, dots-right, stars-right, bars) encode the session count;
+// the rest (spinner, pulse, ball, wave, worm) play as a pure animation from the packet.
 String activityStyle = "dots-right";
 DisplayActivityRuntime claudeRuntime = {false, 0, 0, false, 0};
 DisplayActivityRuntime codexRuntime = {false, 0, 0, false, 0};
@@ -214,18 +214,18 @@ bool configRestartPending = false;
 uint32_t configRestartAtMs = 0;
 uint32_t lastNoChangeLogAtMs = 0;
 
-// Estado del cliente long-poll de actividad (no bloqueante).
+// State of the activity long-poll client (non-blocking).
 WiFiClient activityClient;
 bool activityPollActive = false;
 uint32_t activityPollStartMs = 0;
 uint32_t activityPollNextStartMs = 0;
 String activityResponse = "";
 
-// Estado del cliente de frames (no bloqueante): mismo patron que el long-poll de actividad.
-// Antes el fetch de frames usaba HTTPClient.GET() sincrono, que bloqueaba el loop -y por
-// tanto la animacion del display- mientras el servidor procesaba la respuesta y se leian los
-// 2048 bytes; eso causaba el congelamiento de ~1s cada pollInterval. Ahora se conecta, envia
-// el GET y lee por trozos en cada vuelta del loop, sin frenar el render.
+// State of the frames client (non-blocking): same pattern as the activity long-poll.
+// Previously the frame fetch used a synchronous HTTPClient.GET() that blocked the loop -and
+// therefore the display animation- while the server processed the response and the 2048
+// bytes were read; that caused the ~1s freeze every pollInterval. Now it connects, sends
+// the GET and reads in chunks on each loop pass, without stalling the render.
 const uint16_t FRAMES_CONNECT_TIMEOUT_MS = 2000;
 const uint32_t FRAMES_FETCH_TIMEOUT_MS = 8000;
 const size_t FRAMES_RESP_MAX_BYTES = FRAMES_TOTAL_BYTES + 1024;
@@ -235,13 +235,13 @@ uint32_t framesFetchStartMs = 0;
 uint8_t framesRespBuf[FRAMES_RESP_MAX_BYTES];
 size_t framesRespLen = 0;
 
-// Estado del salvapantallas por pantalla fisica (anti burn-in cuando hay servicio caido).
+// Screensaver state per physical screen (anti burn-in when the service is down).
 struct SaverState
 {
     bool initialized;
     uint32_t frame;
     uint32_t rng;
-    int16_t dvdX, dvdY, dvdVX, dvdVY; // DVD (esquina) y centro del flower
+    int16_t dvdX, dvdY, dvdVX, dvdVY; // DVD (corner) and center of the flower
     uint8_t snakeX[48], snakeY[48], snakeLen, foodX, foodY;
     int16_t drop[22];
     uint8_t dropSpeed[22];
@@ -254,7 +254,7 @@ SaverState codexSaver = {};
 uint8_t currentSaverId = SAVER_DEFAULT;
 bool saverRunning = false;
 uint32_t lastSaverFrameMs = 0;
-// Brillo actual (% del contraste configurado); el servicio lo decide via X-Brightness.
+// Current brightness (% of the configured contrast); the service decides it via X-Brightness.
 uint8_t currentBrightnessPct = 100;
 
 void drawBootLogContent(Adafruit_SSD1306 &display, const bool isClaude);
@@ -486,7 +486,7 @@ String getLogsJson()
 String getPageHtml()
 {
     return R"HTML(<!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -534,52 +534,52 @@ String getPageHtml()
       <nav>
         <button class="active" data-page="home">Home</button>
         <button data-page="ota">OTA</button>
-        <button data-page="config">Configuracion</button>
+        <button data-page="config">Configuration</button>
         <button data-page="logs">Logs</button>
       </nav>
     </aside>
     <main>
       <header>
-        <div><h1>Estado del monitor</h1><p>El uso viene del servicio local en tu PC.</p></div>
-        <span id="service-pill" class="pill">Cargando</span>
+        <div><h1>Monitor status</h1><p>Usage comes from the local service on your PC.</p></div>
+        <span id="service-pill" class="pill">Loading</span>
       </header>
       <section id="page-home" class="page active">
         <div id="status-cards" class="grid"></div>
       </section>
       <section id="page-ota" class="page">
         <div class="panel">
-          <h2>OTA web</h2>
-          <p>Sube un firmware .bin. Para trabajo normal usar USB por velocidad.</p>
+          <h2>Web OTA</h2>
+          <p>Upload a .bin firmware. For normal work use USB for speed.</p>
           <form id="ota-form">
             <input id="firmware" name="firmware" type="file" accept=".bin,application/octet-stream" required>
             <div class="bar"><span id="ota-bar"></span></div>
-            <p id="ota-status">Listo para cargar firmware.</p>
-            <button class="primary" type="submit">Subir firmware</button>
+            <p id="ota-status">Ready to upload firmware.</p>
+            <button class="primary" type="submit">Upload firmware</button>
           </form>
         </div>
       </section>
       <section id="page-config" class="page">
         <div class="panel">
-          <h2>Configuracion local del ESP</h2>
+          <h2>Local ESP configuration</h2>
           <form id="config-form">
             <div class="form-grid">
               <label>WiFi SSID
                 <input id="wifi-ssid" type="text" minlength="1" maxlength="32" required>
               </label>
-              <label>WiFi clave
-                <input id="wifi-password" type="password" minlength="8" maxlength="63" placeholder="Dejar vacia para conservar">
+              <label>WiFi password
+                <input id="wifi-password" type="password" minlength="8" maxlength="63" placeholder="Leave empty to keep current">
               </label>
-              <label>URL del servicio
+              <label>Service URL
                 <input id="service-url" type="url" required>
               </label>
               <label>Polling ms
                 <input id="poll-ms" type="number" min="1000" step="1000" required>
               </label>
-              <label>Claude OLED activo
-                <select id="claude-enabled"><option value="true">Si</option><option value="false">No</option></select>
+              <label>Claude OLED enabled
+                <select id="claude-enabled"><option value="true">Yes</option><option value="false">No</option></select>
               </label>
-              <label>Codex OLED activo
-                <select id="codex-enabled"><option value="true">Si</option><option value="false">No</option></select>
+              <label>Codex OLED enabled
+                <select id="codex-enabled"><option value="true">Yes</option><option value="false">No</option></select>
               </label>
               <label>Claude SDA
                 <input id="claude-sda" type="number" min="0" max="39">
@@ -599,21 +599,21 @@ String getPageHtml()
               <label>Codex address decimal
                 <input id="codex-address" type="number" min="1" max="127">
               </label>
-              <label>Claude contraste
+              <label>Claude contrast
                 <input id="claude-contrast" type="number" min="0" max="255">
               </label>
-              <label>Codex contraste
+              <label>Codex contrast
                 <input id="codex-contrast" type="number" min="0" max="255">
               </label>
             </div>
-            <button class="primary" type="submit">Guardar y reiniciar pantallas</button>
+            <button class="primary" type="submit">Save and restart displays</button>
           </form>
         </div>
-        <div class="panel" style="margin-top:14px"><h2>Estado JSON</h2><pre id="raw-json">{}</pre></div>
+        <div class="panel" style="margin-top:14px"><h2>JSON status</h2><pre id="raw-json">{}</pre></div>
       </section>
       <section id="page-logs" class="page">
         <div class="panel">
-          <div class="metric"><h2>Logs serial</h2><span id="serial-log-meta" class="pill">0 bytes</span></div>
+          <div class="metric"><h2>Serial logs</h2><span id="serial-log-meta" class="pill">0 bytes</span></div>
           <pre id="serial-logs" class="log-window"></pre>
         </div>
       </section>
@@ -625,20 +625,20 @@ String getPageHtml()
       return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
     }
     function boolLabel(value) {
-      return value ? 'Si' : 'No';
+      return value ? 'Yes' : 'No';
     }
     function renderStatusCards(data) {
       const serviceClass = data.service_online ? 'ok' : 'danger';
       const displayClass = data.claude_display_ready && data.codex_display_ready ? 'ok' : 'warn';
       const emergencyMode = data.wifi_mode === 'emergency_ap';
       const wifiClass = emergencyMode ? 'warn' : 'ok';
-      const wifiLabel = emergencyMode ? 'Emergencia' : 'Conectado';
-      const domainLine = emergencyMode ? `<p>Abrir: ${escapeHtml(data.emergency_ap_url)}</p>` : `<p>Dominio: ${escapeHtml(data.local_domain)}</p>`;
-      const passwordLine = emergencyMode ? `<p>Clave: ${escapeHtml(data.emergency_ap_password)}</p>` : '';
+      const wifiLabel = emergencyMode ? 'Emergency' : 'Connected';
+      const domainLine = emergencyMode ? `<p>Open: ${escapeHtml(data.emergency_ap_url)}</p>` : `<p>Domain: ${escapeHtml(data.local_domain)}</p>`;
+      const passwordLine = emergencyMode ? `<p>Password: ${escapeHtml(data.emergency_ap_password)}</p>` : '';
       return `
         <article class="panel">
           <div class="metric"><h2>WiFi</h2><span class="pill ${wifiClass}">${wifiLabel}</span></div>
-          <p>Red: ${escapeHtml(data.wifi_ssid)}</p>
+          <p>Network: ${escapeHtml(data.wifi_ssid)}</p>
           ${passwordLine}
           <p>IP: ${escapeHtml(data.ip)}</p>
           ${domainLine}
@@ -646,19 +646,19 @@ String getPageHtml()
         </article>
         <article class="panel">
           <div class="metric"><h2>Frames</h2><span class="pill ${serviceClass}">${data.service_online ? 'Online' : 'Offline'}</span></div>
-          <p>Servicio: ${escapeHtml(data.service_url)}</p>
-          <p>Error: ${escapeHtml(data.service_error || 'Sin errores')}</p>
-          <p>Ultimo frame: ${escapeHtml(data.frame_updated_at_ms)} ms</p>
+          <p>Service: ${escapeHtml(data.service_url)}</p>
+          <p>Error: ${escapeHtml(data.service_error || 'No errors')}</p>
+          <p>Last frame: ${escapeHtml(data.frame_updated_at_ms)} ms</p>
         </article>
         <article class="panel">
-          <div class="metric"><h2>Pantallas</h2><span class="pill ${displayClass}">OLED</span></div>
+          <div class="metric"><h2>Displays</h2><span class="pill ${displayClass}">OLED</span></div>
           <p>Claude: ${boolLabel(data.claude_display_ready)}</p>
           <p>Codex: ${boolLabel(data.codex_display_ready)}</p>
         </article>
         <article class="panel">
-          <div class="metric"><h2>OTA</h2><span class="pill ${data.web_ota_error ? 'danger' : 'ok'}">${data.web_ota_error ? 'Error' : 'Listo'}</span></div>
+          <div class="metric"><h2>OTA</h2><span class="pill ${data.web_ota_error ? 'danger' : 'ok'}">${data.web_ota_error ? 'Error' : 'Ready'}</span></div>
           <p>${escapeHtml(data.web_ota_status)}</p>
-          <p>Bytes recibidos: ${escapeHtml(data.web_ota_bytes)}</p>
+          <p>Bytes received: ${escapeHtml(data.web_ota_bytes)}</p>
         </article>`;
     }
     async function loadStatus() {
@@ -704,7 +704,7 @@ String getPageHtml()
     }
     async function refresh() {
       const data = await loadStatus();
-      $('service-pill').textContent = data.service_online ? 'Servicio online' : 'Servicio offline';
+      $('service-pill').textContent = data.service_online ? 'Service online' : 'Service offline';
       $('service-pill').className = 'pill ' + (data.service_online ? 'ok' : 'danger');
       $('status-cards').innerHTML = renderStatusCards(data);
       $('raw-json').textContent = JSON.stringify(data, null, 2);
@@ -744,8 +744,8 @@ String getPageHtml()
       const request = new XMLHttpRequest();
       form.append('firmware', file, file.name);
       request.upload.onprogress = (progress) => { if (progress.lengthComputable) $('ota-bar').style.width = Math.round((progress.loaded * 100) / progress.total) + '%'; };
-      request.onload = () => { $('ota-status').textContent = request.status < 300 ? 'Firmware recibido. Reiniciando...' : request.responseText; };
-      request.onerror = () => { $('ota-status').textContent = 'No se pudo completar la carga.'; };
+      request.onload = () => { $('ota-status').textContent = request.status < 300 ? 'Firmware received. Restarting...' : request.responseText; };
+      request.onerror = () => { $('ota-status').textContent = 'Upload could not be completed.'; };
       request.open('POST', '/ota/upload');
       request.send(form);
     });
@@ -780,7 +780,7 @@ void pushBootLogLine(String lines[], uint8_t &lineCount, const uint8_t maxLines,
     lines[maxLines - 1] = line;
 }
 
-// Parte el buffer de log en hasta maxLines lineas envueltas a maxChars; devuelve cuantas hay.
+// Splits the log buffer into up to maxLines lines wrapped at maxChars; returns how many there are.
 uint8_t buildBootLogLines(String lines[], const uint8_t maxLines, const uint8_t maxChars)
 {
     String currentLine = "";
@@ -814,7 +814,7 @@ uint8_t buildBootLogLines(String lines[], const uint8_t maxLines, const uint8_t 
 
 void drawMascotClaude(Adafruit_SSD1306 &display, const int16_t cx, const int16_t cy)
 {
-    // "Spark" de Claude: 12 rayos radiales desde el centro (estilo destello).
+    // Claude "Spark": 12 radial rays from the center (starburst style).
     const float innerRadius = 2.5;
     const float outerRadius = 11.0;
     for (uint8_t i = 0; i < 12; i++)
@@ -831,7 +831,7 @@ void drawMascotClaude(Adafruit_SSD1306 &display, const int16_t cx, const int16_t
 
 void drawMascotCodex(Adafruit_SSD1306 &display, const int16_t cx, const int16_t cy)
 {
-    // Codex: ventana de terminal con el prompt ">_" (mismo lenguaje visual que la web).
+    // Codex: terminal window with the ">_" prompt (same visual language as the web page).
     const int16_t w = 28;
     const int16_t h = 22;
     const int16_t x = cx - w / 2;
@@ -852,10 +852,10 @@ void drawBootLogContent(Adafruit_SSD1306 &display, const bool isClaude)
     const uint8_t lineCount = buildBootLogLines(lines, BOOT_LOG_LINE_COUNT, BOOT_LOG_LINE_CHARS);
 
     display.clearDisplay();
-    // Marco de pixeles blancos en el borde de la pantalla.
+    // White pixel frame around the screen edge.
     display.drawRect(0, 0, OLED_WIDTH, OLED_HEIGHT, SSD1306_WHITE);
 
-    // Mascot + nombre de la herramienta en la columna izquierda.
+    // Mascot + tool name in the left column.
     if (isClaude)
     {
         drawMascotClaude(display, BOOT_MASCOT_CX, BOOT_MASCOT_CY);
@@ -871,10 +871,10 @@ void drawBootLogContent(Adafruit_SSD1306 &display, const bool isClaude)
     display.setCursor(BOOT_MASCOT_CX - nameWidth / 2, 44);
     display.print(name);
 
-    // Divisor vertical entre el mascot y los logs.
+    // Vertical divider between the mascot and the logs.
     display.drawLine(BOOT_DIVIDER_X, 3, BOOT_DIVIDER_X, OLED_HEIGHT - 4, SSD1306_WHITE);
 
-    // Logs en la columna derecha, dentro del marco.
+    // Logs in the right column, inside the frame.
     for (uint8_t i = 0; i < lineCount; i++)
     {
         display.setCursor(BOOT_LOG_X, BOOT_LOG_TOP + i * 8);
@@ -910,13 +910,13 @@ void drawEmergencyWifiContent(Adafruit_SSD1306 &display)
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
     display.setCursor(0, 0);
-    display.print("WiFi emergencia");
+    display.print("Emergency WiFi");
     display.setCursor(0, 10);
     display.print("SSID:");
     display.setCursor(0, 20);
     display.print(EMERGENCY_AP_SSID);
     display.setCursor(0, 30);
-    display.print("Clave:");
+    display.print("Password:");
     display.setCursor(0, 40);
     display.print(EMERGENCY_AP_PASSWORD);
     display.setCursor(0, 54);
@@ -941,7 +941,7 @@ void initializeDisplays()
 {
     claudeDisplayReady = false;
     codexDisplayReady = false;
-    // Se aplica el contraste pleno configurado; el brillo vuelve a 100%.
+    // The configured full contrast is applied; brightness returns to 100%.
     currentBrightnessPct = 100;
 
     if (settings.claudeDisplay.enabled)
@@ -972,7 +972,7 @@ void initializeDisplays()
         return;
     }
 
-    drawOfflineDisplays(String("Pantallas reinicializadas sin frame nuevo."));
+    drawOfflineDisplays(String("Displays reinitialized without a new frame."));
 }
 
 void renderFrames()
@@ -994,9 +994,9 @@ void renderFrames()
 
 void drawWaitingOverlay(Adafruit_SSD1306 &display)
 {
-    // Elipsis animada en la esquina superior derecha: 0..3 puntos por ciclo. Se mantiene DENTRO
-    // del marco (no toca el borde superior y=0 ni el derecho x=OLED_WIDTH-1) para no recortarlo
-    // al arrancar; el limpiado va de y=1 y termina 1px antes del borde derecho.
+    // Animated ellipsis in the top-right corner: 0..3 dots per cycle. It stays INSIDE
+    // the frame (does not touch the top edge y=0 or the right edge x=OLED_WIDTH-1) so it is
+    // not clipped at boot; the clear starts at y=1 and ends 1px before the right edge.
     display.fillRect(108, 1, OLED_WIDTH - 108 - 1, 8, SSD1306_BLACK);
     const uint8_t dots = ellipsisStep % 4;
     for (uint8_t i = 0; i < dots; i++)
@@ -1007,9 +1007,9 @@ void drawWaitingOverlay(Adafruit_SSD1306 &display)
 
 void drawOfflineDisplays(const String &reason)
 {
-    // Mientras el servicio esté caído poco tiempo se anima la elipsis; pasado el
-    // periodo de gracia, el loop muestra el salvapantallas y aquí no se dibuja nada.
-    logPrint(String("Modo elipsis: "));
+    // While the service is down for a short time the ellipsis animates; past the
+    // grace period, the loop shows the screensaver and nothing is drawn here.
+    logPrint(String("Ellipsis mode: "));
     logPrintln(reason);
 
     if (saverRunning)
@@ -1050,9 +1050,9 @@ void drawOfflineDisplays(const String &reason)
 
 String httpHeaderValue(const String &headerBlock, const String &lowerBlock, const char *name)
 {
-    // Devuelve el valor de "<name>:" en el bloque de cabeceras (case-insensitive) o "".
-    // lowerBlock es el bloque ya en minusculas (lo calcula el llamador UNA vez y lo reusa para
-    // todas las cabeceras, en vez de copiar+minuscular el bloque en cada consulta).
+    // Returns the value of "<name>:" in the header block (case-insensitive) or "".
+    // lowerBlock is the block already lowercased (the caller computes it ONCE and reuses it for
+    // all headers, instead of copying+lowercasing the block on every lookup).
     String needle = String(name);
     needle.toLowerCase();
     needle += ":";
@@ -1074,7 +1074,7 @@ String httpHeaderValue(const String &headerBlock, const String &lowerBlock, cons
 
 void applyFramesHeaders(const String &headerBlock, const String &lowerBlock)
 {
-    // Actividad, animacion, salvapantallas y brillo llegan en cabeceras (200 y 304).
+    // Activity, animation, screensaver and brightness arrive in headers (200 and 304).
     const String headerClaudeActivity = httpHeaderValue(headerBlock, lowerBlock, "X-Act-Claude");
     const String headerCodexActivity = httpHeaderValue(headerBlock, lowerBlock, "X-Act-Codex");
     const String headerAnimEtag = httpHeaderValue(headerBlock, lowerBlock, "X-Anim-Etag");
@@ -1087,8 +1087,8 @@ void applyFramesHeaders(const String &headerBlock, const String &lowerBlock)
     {
         codexContentActivity = headerCodexActivity;
     }
-    // Sesiones busy en paralelo (2 puntos por sesion en el ESP). Se acota a [0, 8] para que
-    // no se desborde el box; durante busy el firmware garantiza al menos 1 (2 puntos).
+    // Busy sessions in parallel (2 dots per session on the ESP). Clamped to [0, 8] so the
+    // box does not overflow; during busy the firmware guarantees at least 1 (2 dots).
     const String headerSessionsClaude = httpHeaderValue(headerBlock, lowerBlock, "X-Sessions-Claude");
     const String headerSessionsCodex = httpHeaderValue(headerBlock, lowerBlock, "X-Sessions-Codex");
     if (headerSessionsClaude.length() > 0)
@@ -1110,7 +1110,7 @@ void applyFramesHeaders(const String &headerBlock, const String &lowerBlock)
     }
     if (headerSaver.length() > 0)
     {
-        // Se aprende mientras hay servicio y se persiste para usarlo offline.
+        // Learned while there is service and persisted to use it offline.
         const uint8_t nextSaver = parseSaverId(headerSaver);
         if (nextSaver != currentSaverId)
         {
@@ -1134,8 +1134,8 @@ void startFramesFetch()
     if (!parseServiceHostPort(settings.serviceUrl, host, port))
     {
         monitorState.serviceOnline = false;
-        monitorState.serviceError = "URL de servicio invalida";
-        drawOfflineDisplays(String("URL de servicio invalida: ") + settings.serviceUrl);
+        monitorState.serviceError = "Invalid service URL";
+        drawOfflineDisplays(String("Invalid service URL: ") + settings.serviceUrl);
         return;
     }
 
@@ -1143,13 +1143,13 @@ void startFramesFetch()
     {
         framesClient.stop();
         monitorState.serviceOnline = false;
-        monitorState.serviceError = "No se pudo conectar";
-        drawOfflineDisplays(String("No se pudo conectar host=") + host + String(":") + String(port));
+        monitorState.serviceError = "Could not connect";
+        drawOfflineDisplays(String("Could not connect host=") + host + String(":") + String(port));
         return;
     }
 
-    // Peticion cruda: el If-None-Match permite el 304 (no redibujar si nada cambio) y el
-    // servidor manda X-Act-* / ETag tanto en 200 como en 304.
+    // Raw request: the If-None-Match enables the 304 (do not redraw if nothing changed) and the
+    // server sends X-Act-* / ETag in both 200 and 304.
     String request = String("GET /api/esp/frames HTTP/1.1\r\n") +
                      String("Host: ") + host + String("\r\n");
     if (frameEtag.length() > 0)
@@ -1166,7 +1166,7 @@ void startFramesFetch()
 
 void processFramesResponse()
 {
-    // Separa cabeceras (texto) de cuerpo (binario) en el primer "\r\n\r\n".
+    // Separates headers (text) from body (binary) at the first "\r\n\r\n".
     int boundary = -1;
     for (size_t i = 0; i + 3 < framesRespLen; i++)
     {
@@ -1180,8 +1180,8 @@ void processFramesResponse()
     if (boundary < 0)
     {
         monitorState.serviceOnline = false;
-        monitorState.serviceError = "Respuesta sin cabeceras";
-        drawOfflineDisplays(String("Respuesta de frames sin cabeceras"));
+        monitorState.serviceError = "Response without headers";
+        drawOfflineDisplays(String("Frames response without headers"));
         return;
     }
 
@@ -1192,7 +1192,7 @@ void processFramesResponse()
         headerBlock += static_cast<char>(framesRespBuf[i]);
     }
 
-    // Codigo de estado de la primera linea: "HTTP/1.1 200 OK".
+    // Status code from the first line: "HTTP/1.1 200 OK".
     int statusCode = 0;
     const int firstSpace = headerBlock.indexOf(' ');
     if (firstSpace >= 0)
@@ -1200,7 +1200,7 @@ void processFramesResponse()
         statusCode = headerBlock.substring(firstSpace + 1, firstSpace + 4).toInt();
     }
 
-    // Bloque en minusculas una sola vez: lo comparten todas las consultas de cabecera.
+    // Lowercased block once: shared by all header lookups.
     String lowerBlock = headerBlock;
     lowerBlock.toLowerCase();
     applyFramesHeaders(headerBlock, lowerBlock);
@@ -1215,14 +1215,14 @@ void processFramesResponse()
         if (!framesReceived)
         {
             monitorState.serviceOnline = false;
-            monitorState.serviceError = "HTTP 304 sin frame previo";
-            drawOfflineDisplays(String("HTTP 304 sin frame previo"));
+            monitorState.serviceError = "HTTP 304 without a previous frame";
+            drawOfflineDisplays(String("HTTP 304 without a previous frame"));
             return;
         }
-        // Sin cambios desde el ultimo frame: no se redibuja y no se muestra elipsis.
+        // No changes since the last frame: nothing is redrawn and no ellipsis is shown.
         if (millis() - lastNoChangeLogAtMs >= PERIODIC_STATUS_LOG_INTERVAL_MS)
         {
-            logPrintln(String("Polling frames sin cambios: HTTP 304"));
+            logPrintln(String("Polling frames unchanged: HTTP 304"));
             lastNoChangeLogAtMs = millis();
         }
         monitorState.serviceOnline = true;
@@ -1235,7 +1235,7 @@ void processFramesResponse()
     {
         monitorState.serviceOnline = false;
         monitorState.serviceError = String("HTTP ") + String(statusCode);
-        drawOfflineDisplays(String("Polling fallo status=") + String(statusCode));
+        drawOfflineDisplays(String("Polling failed status=") + String(statusCode));
         return;
     }
 
@@ -1244,13 +1244,13 @@ void processFramesResponse()
     if (bodyLen != FRAMES_TOTAL_BYTES)
     {
         monitorState.serviceOnline = false;
-        monitorState.serviceError = String("Frame incompleto: ") + String(bodyLen);
-        drawOfflineDisplays(String("Frame incompleto bytes=") + String(bodyLen) + String(" esperados=") + String(FRAMES_TOTAL_BYTES));
+        monitorState.serviceError = String("Incomplete frame: ") + String(bodyLen);
+        drawOfflineDisplays(String("Incomplete frame bytes=") + String(bodyLen) + String(" expected=") + String(FRAMES_TOTAL_BYTES));
         return;
     }
 
-    // Pantallas intercambiadas: el OLED de Claude (21/22) muestra el frame de
-    // Codex y el de Codex (16/17) el de Claude.
+    // Swapped displays: the Claude OLED (21/22) shows the Codex frame
+    // and the Codex OLED (16/17) shows the Claude frame.
     const bool wasServiceOnline = monitorState.serviceOnline;
     const bool hadFrame = framesReceived;
     memcpy(claudeFrame, framesRespBuf + bodyStart + FRAME_BYTES, FRAME_BYTES);
@@ -1262,7 +1262,7 @@ void processFramesResponse()
     monitorState.frameUpdatedAtMs = millis();
     if (!hadFrame || !wasServiceOnline)
     {
-        logPrint(String("Frame recibido OK bytes="));
+        logPrint(String("Frame received OK bytes="));
         logPrint(String(FRAMES_TOTAL_BYTES));
         logPrint(String(" etag="));
         logPrintln(frameEtag);
@@ -1272,8 +1272,8 @@ void processFramesResponse()
 
 void serviceFramesFetch()
 {
-    // Maquina de estados no bloqueante: arranca un fetch cada pollInterval y lo va leyendo
-    // por trozos en cada vuelta del loop, sin congelar el render mientras el servidor responde.
+    // Non-blocking state machine: starts a fetch every pollInterval and reads it
+    // in chunks on each loop pass, without freezing the render while the server responds.
     if (emergencyWifiActive)
     {
         if (framesFetchActive)
@@ -1294,19 +1294,19 @@ void serviceFramesFetch()
         return;
     }
 
-    // Tope de seguridad: si el servidor no respondio a tiempo, corta y reintenta luego.
+    // Safety cap: if the server did not respond in time, cut and retry later.
     if (millis() - framesFetchStartMs > FRAMES_FETCH_TIMEOUT_MS)
     {
         framesClient.stop();
         framesFetchActive = false;
         monitorState.serviceOnline = false;
-        monitorState.serviceError = "Timeout de frames";
-        drawOfflineDisplays(String("Timeout esperando frames"));
+        monitorState.serviceError = "Frames timeout";
+        drawOfflineDisplays(String("Timeout waiting for frames"));
         return;
     }
 
-    // Lectura no bloqueante: consume en bloque lo disponible en esta vuelta del loop
-    // (readBytes con el conteo disponible no bloquea y es mas eficiente que byte a byte).
+    // Non-blocking read: consumes in bulk whatever is available on this loop pass
+    // (readBytes with the available count does not block and is more efficient than byte by byte).
     const int available = framesClient.available();
     if (available > 0 && framesRespLen < FRAMES_RESP_MAX_BYTES)
     {
@@ -1319,17 +1319,17 @@ void serviceFramesFetch()
         framesRespLen += framesClient.readBytes(framesRespBuf + framesRespLen, toRead);
     }
 
-    // Respuesta mas grande de lo previsto (no deberia pasar): aborta para no corromper.
+    // Response larger than expected (should not happen): abort to avoid corruption.
     if (framesRespLen >= FRAMES_RESP_MAX_BYTES && framesClient.available() > 0)
     {
         framesClient.stop();
         framesFetchActive = false;
         monitorState.serviceOnline = false;
-        monitorState.serviceError = "Respuesta demasiado grande";
+        monitorState.serviceError = "Response too large";
         return;
     }
 
-    // El servidor cierra al terminar (Connection: close): respuesta completa.
+    // The server closes when done (Connection: close): response complete.
     if (!framesClient.connected() && framesClient.available() == 0)
     {
         framesClient.stop();
@@ -1342,12 +1342,12 @@ void parseActivityAnimation(const uint8_t *data, const size_t length, const Stri
 {
     if (length < ANIM_PACK_HEADER_BYTES)
     {
-        logPrintln(String("Animacion: paquete demasiado corto"));
+        logPrintln(String("Animation: packet too short"));
         return;
     }
     if (data[0] != ANIM_PACK_MAGIC || data[1] != ANIM_PACK_VERSION)
     {
-        logPrintln(String("Animacion: cabecera invalida"));
+        logPrintln(String("Animation: invalid header"));
         return;
     }
 
@@ -1364,7 +1364,7 @@ void parseActivityAnimation(const uint8_t *data, const size_t length, const Stri
         frameBytes == 0 || frameCount == 0 || frameCount > ANIM_MAX_FRAMES || bodyBytes > sizeof(animFrameData) ||
         (ANIM_PACK_HEADER_BYTES + bodyBytes) > length)
     {
-        logPrintln(String("Animacion: dimensiones fuera de rango"));
+        logPrintln(String("Animation: dimensions out of range"));
         return;
     }
 
@@ -1382,10 +1382,10 @@ void parseActivityAnimation(const uint8_t *data, const size_t length, const Stri
     claudeRuntime.animActive = false;
     codexRuntime.animActive = false;
 
-    logPrint(String("Animacion almacenada frames="));
+    logPrint(String("Animation stored frames="));
     logPrint(String(frameCount));
     logPrint(String(" ") + String(frameW) + String("x") + String(frameH));
-    logPrint(String(" intervalo=") + String(activityAnimation.intervalMs));
+    logPrint(String(" interval=") + String(activityAnimation.intervalMs));
     logPrintln(String("ms"));
 }
 
@@ -1395,7 +1395,7 @@ void fetchActivityAnimation()
     const String endpoint = settings.serviceUrl + String("/api/esp/activity-animation");
     if (!httpClient.begin(endpoint))
     {
-        logPrintln(String("Animacion: no se pudo iniciar HTTP"));
+        logPrintln(String("Animation: could not start HTTP"));
         return;
     }
 
@@ -1416,7 +1416,7 @@ void fetchActivityAnimation()
     }
     if (statusCode != HTTP_CODE_OK)
     {
-        logPrint(String("Animacion: descarga fallo status="));
+        logPrint(String("Animation: download failed status="));
         logPrintln(String(statusCode));
         httpClient.end();
         return;
@@ -1426,7 +1426,7 @@ void fetchActivityAnimation()
     static uint8_t downloadBuffer[ANIM_MAX_BYTES];
     if (contentLength > static_cast<int>(sizeof(downloadBuffer)))
     {
-        logPrint(String("Animacion: paquete demasiado grande bytes="));
+        logPrint(String("Animation: packet too large bytes="));
         logPrintln(String(contentLength));
         httpClient.end();
         return;
@@ -1461,7 +1461,7 @@ void fetchActivityAnimation()
 
 bool parseServiceHostPort(const String &url, String &host, uint16_t &port)
 {
-    // Extrae host y puerto de "http://host:puerto[/...]" (sin soporte TLS).
+    // Extracts host and port from "http://host:port[/...]" (no TLS support).
     if (!url.startsWith("http://"))
     {
         return false;
@@ -1488,7 +1488,7 @@ bool parseServiceHostPort(const String &url, String &host, uint16_t &port)
 
 void applyActivityResponse(const String &response)
 {
-    // El cuerpo es "<claude> <codex>" tras la linea en blanco de cabeceras.
+    // The body is "<claude> <codex>" after the blank header line.
     const int bodyIndex = response.indexOf("\r\n\r\n");
     if (bodyIndex < 0)
     {
@@ -1530,7 +1530,7 @@ void startActivityLongPoll()
         return;
     }
 
-    // Envia el estado conocido: el servidor retiene hasta que difiera o venza el tope.
+    // Sends the known state: the server holds until it differs or the cap expires.
     const String request = String("GET /api/esp/activity-wait?c=") + claudeContentActivity +
                            String("&x=") + codexContentActivity + String(" HTTP/1.1\r\n") +
                            String("Host: ") + host + String("\r\n") +
@@ -1543,8 +1543,8 @@ void startActivityLongPoll()
 
 void stopActivityLongPoll(uint32_t retryAtMs)
 {
-    // Cierra el socket y descarta respuesta parcial; evita dejar clientes vivos al
-    // cambiar a modo AP o tras timeouts de long-poll.
+    // Closes the socket and discards the partial response; avoids leaving clients alive when
+    // switching to AP mode or after long-poll timeouts.
     activityClient.stop();
     activityPollActive = false;
     activityResponse = "";
@@ -1559,10 +1559,10 @@ void serviceActivityLongPoll()
         return;
     }
 
-    // Con el salvapantallas activo el servicio esta caido: la actividad es
-    // irrelevante (en pantalla va la animacion) y el connect() bloqueante del
-    // long-poll a un host inalcanzable congelaria el render. pollFrames sigue
-    // sondeando y retira el salvapantallas en cuanto el servicio vuelve.
+    // With the screensaver active the service is down: activity is
+    // irrelevant (the screen shows the animation) and the blocking connect() of the
+    // long-poll to an unreachable host would freeze the render. pollFrames keeps
+    // polling and removes the screensaver as soon as the service returns.
     if (saverRunning)
     {
         stopActivityLongPoll(millis() + ACTIVITY_LONGPOLL_RETRY_MS);
@@ -1578,14 +1578,14 @@ void serviceActivityLongPoll()
         return;
     }
 
-    // Tope de seguridad: si el servidor no respondio, corta y reintenta.
+    // Safety cap: if the server did not respond, cut and retry.
     if (millis() - activityPollStartMs > ACTIVITY_LONGPOLL_TIMEOUT_MS)
     {
         stopActivityLongPoll(millis());
         return;
     }
 
-    // Lectura no bloqueante: solo consume lo disponible en esta vuelta del loop.
+    // Non-blocking read: only consumes what is available on this loop pass.
     while (activityClient.available() > 0)
     {
         activityResponse += static_cast<char>(activityClient.read());
@@ -1595,7 +1595,7 @@ void serviceActivityLongPoll()
         }
     }
 
-    // El servidor cierra al terminar (Connection: close): respuesta completa.
+    // The server closes when done (Connection: close): response complete.
     if (!activityClient.connected() && activityClient.available() == 0)
     {
         applyActivityResponse(activityResponse);
@@ -1603,7 +1603,7 @@ void serviceActivityLongPoll()
     }
 }
 
-// ---- Salvapantallas (anti burn-in) ----------------------------------------
+// ---- Screensaver (anti burn-in) -------------------------------------------
 const char SAVER_MATRIX_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 uint32_t saverRand(SaverState &state)
@@ -1626,8 +1626,8 @@ uint8_t parseSaverId(const String &name)
 
 void mazeGenerate(SaverState &state)
 {
-    // Laberinto perfecto por backtracker iterativo sobre 16x8 celdas. Cada celda
-    // guarda si conserva su pared Este y Sur (bitmask); se quitan al conectar.
+    // Perfect maze via iterative backtracker over 16x8 cells. Each cell
+    // stores whether it keeps its East and South wall (bitmask); they are removed when connecting.
     for (uint8_t i = 0; i < 16; i++)
     {
         state.mazeWallE[i] = 0xFF;
@@ -1704,7 +1704,7 @@ void initSaver(SaverState &state, uint32_t seed)
 
 void drawDvdEllipse(Adafruit_SSD1306 &display, const int16_t cx, const int16_t cy, const int16_t rx, const int16_t ry)
 {
-    // Contorno de elipse por segmentos (Adafruit GFX no trae drawEllipse).
+    // Ellipse outline by segments (Adafruit GFX does not include drawEllipse).
     const uint8_t steps = 24;
     int16_t px = cx + rx;
     int16_t py = cy;
@@ -1723,14 +1723,14 @@ void drawSaverDvd(Adafruit_SSD1306 &display, SaverState &state)
 {
     const int16_t w = 40;
     const int16_t h = 22;
-    // Velocidad entera constante (2/1 px por frame): suave, sin saltos de frame.
+    // Constant integer speed (2/1 px per frame): smooth, without frame jumps.
     state.dvdX += state.dvdVX;
     state.dvdY += state.dvdVY;
     if (state.dvdX <= 0 || state.dvdX + w >= OLED_WIDTH) { state.dvdVX = -state.dvdVX; state.dvdX = constrain(state.dvdX, 0, OLED_WIDTH - w); }
     if (state.dvdY <= 0 || state.dvdY + h >= OLED_HEIGHT) { state.dvdVY = -state.dvdVY; state.dvdY = constrain(state.dvdY, 0, OLED_HEIGHT - h); }
     display.clearDisplay();
     const int16_t cx = state.dvdX + w / 2;
-    // Mini logo DVD: oval caracteristico + "DVD" dentro + banda "VIDEO" debajo.
+    // Mini DVD logo: characteristic oval + "DVD" inside + "VIDEO" band below.
     drawDvdEllipse(display, cx, state.dvdY + 7, 18, 6);
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
@@ -1852,7 +1852,7 @@ void drawSaverMaze(Adafruit_SSD1306 &display, SaverState &state)
     const uint8_t cell = 8;
     const uint8_t cols = 16;
     const uint8_t rows = 8;
-    // El punto avanza a un vecino conectado (sin pared entre celdas).
+    // The dot advances to a connected neighbor (no wall between cells).
     const uint8_t idx = state.mazeY * cols + state.mazeX;
     uint8_t toX[4];
     uint8_t toY[4];
@@ -1942,7 +1942,7 @@ void drawSaverFrame(Adafruit_SSD1306 &display, SaverState &state, uint8_t saverI
 
 void applyBrightness(uint8_t pct)
 {
-    // Aplica pct% del contraste configurado de cada pantalla. Solo toca el I2C si cambia.
+    // Applies pct% of each screen's configured contrast. Only touches I2C if it changes.
     if (pct > 100)
     {
         pct = 100;
@@ -1971,8 +1971,8 @@ void resetActivityRuntimeForSaver(Adafruit_SSD1306 &display, DisplayActivityRunt
         return;
     }
 
-    // El salvapantallas debe arrancar en polaridad normal; si veníamos de "waiting",
-    // una pantalla negra invertida quedaría blanca y sería peor para burn-in.
+    // The screensaver must start in normal polarity; if we came from "waiting",
+    // an inverted black screen would end up white and worse for burn-in.
     display.invertDisplay(false);
     runtime.invertOn = false;
     runtime.animActive = false;
@@ -1983,11 +1983,11 @@ void resetActivityRuntimeForSaver(Adafruit_SSD1306 &display, DisplayActivityRunt
 
 void startScreenSaver()
 {
-    // El salvapantallas se ve a brillo pleno (ya previene burn-in por si solo).
+    // The screensaver is shown at full brightness (it already prevents burn-in on its own).
     applyBrightness(100);
     resetActivityRuntimeForSaver(claudeOled, claudeRuntime, settings.claudeDisplay.enabled && claudeDisplayReady);
     resetActivityRuntimeForSaver(codexOled, codexRuntime, settings.codexDisplay.enabled && codexDisplayReady);
-    // Re-siembra el estado de cada pantalla al activar el salvapantallas.
+    // Re-seeds each screen's state when the screensaver is activated.
     initSaver(claudeSaver, millis() ^ 0xA53Cu);
     initSaver(codexSaver, (millis() << 1) ^ 0x5AC3u);
 }
@@ -2006,7 +2006,7 @@ void renderScreenSaver()
 
 uint16_t activityBoxX()
 {
-    // Recuadro anclado al borde derecho: si el ancho cambia, sigue pegado a la derecha.
+    // Box anchored to the right edge: if the width changes, it stays stuck to the right.
     return (activityAnimation.frameW <= OLED_WIDTH) ? (OLED_WIDTH - activityAnimation.frameW) : 0;
 }
 
@@ -2027,13 +2027,13 @@ void drawActivityFrame(Adafruit_SSD1306 &display, const uint8_t index)
     display.drawBitmap(activityBoxX(), ACTIVITY_BOX_Y, framePtr, activityAnimation.frameW, activityAnimation.frameH, SSD1306_WHITE);
 }
 
-// Velocidad de la marcha: ms que tarda en avanzar 1px. Basada en millis() para que el
-// movimiento sea fluido y constante, independientemente del intervalo de redibujado.
+// March speed: ms it takes to advance 1px. Based on millis() so the
+// movement is smooth and constant, regardless of the redraw interval.
 const uint32_t ACTIVITY_DOTS_MS_PER_PX = 25;
 
 void drawPlusShape(Adafruit_SSD1306 &display, int16_t left, int16_t top, uint8_t size)
 {
-    // Estrella en "+": brazos horizontal y vertical cruzados en el centro de un area size x size.
+    // Star as "+": horizontal and vertical arms crossed at the center of a size x size area.
     const int16_t cx = left + (size - 1) / 2;
     const int16_t cy = top + (size - 1) / 2;
     display.drawFastHLine(left, cy, size, SSD1306_WHITE);
@@ -2042,10 +2042,10 @@ void drawPlusShape(Adafruit_SSD1306 &display, int16_t left, int16_t top, uint8_t
 
 void drawSessionMarch(Adafruit_SSD1306 &display, uint8_t sessions, bool plus)
 {
-    // 2 figuras (3x3) por sesion en paralelo, todas visibles, marchando a la derecha y
-    // reapareciendo por la izquierda. Espaciado ENTERO que divide perfecto (spacing*count <= w),
-    // centrado, dejando margen a los lados: asi todos los huecos son identicos (sin hueco por
-    // redondeo). La sesion en busy garantiza >=1 (2 figuras).
+    // 2 shapes (3x3) per session in parallel, all visible, marching to the right and
+    // reappearing on the left. INTEGER spacing that divides perfectly (spacing*count <= w),
+    // centered, leaving margin on the sides: this way all gaps are identical (no gap from
+    // rounding). A session in busy guarantees >=1 (2 shapes).
     clearActivityBox(display);
     const uint8_t w = activityAnimation.frameW;
     const uint8_t h = activityAnimation.frameH;
@@ -2060,7 +2060,7 @@ void drawSessionMarch(Adafruit_SSD1306 &display, uint8_t sessions, bool plus)
         shape = h;
     }
     uint16_t count = static_cast<uint16_t>(sessions < 1 ? 1 : sessions) * 2;
-    const uint16_t maxShapes = w / (shape + 1); // shape + 1px de separacion minima
+    const uint16_t maxShapes = w / (shape + 1); // shape + 1px minimum separation
     if (maxShapes >= 1 && count > maxShapes)
     {
         count = maxShapes;
@@ -2070,9 +2070,9 @@ void drawSessionMarch(Adafruit_SSD1306 &display, uint8_t sessions, bool plus)
         count = 1;
     }
 
-    const uint16_t spacing = w / count;     // espaciado entero exacto
-    const uint16_t period = spacing * count; // ancho realmente usado (<= w)
-    // Pegado al borde DERECHO del box; el sobrante (w - period) queda como margen a la izquierda.
+    const uint16_t spacing = w / count;     // exact integer spacing
+    const uint16_t period = spacing * count; // width actually used (<= w)
+    // Stuck to the RIGHT edge of the box; the leftover (w - period) stays as left margin.
     const int16_t startX = activityBoxX() + (w - period);
     const int16_t topY = ACTIVITY_BOX_Y + ((h > shape) ? (h - shape) / 2 : 0);
     const uint16_t offset = static_cast<uint16_t>((millis() / ACTIVITY_DOTS_MS_PER_PX) % period);
@@ -2092,8 +2092,8 @@ void drawSessionMarch(Adafruit_SSD1306 &display, uint8_t sessions, bool plus)
 
 void drawSessionBars(Adafruit_SSD1306 &display, uint8_t sessions)
 {
-    // 2 barras por sesion (ecualizador), posiciones fijas con espaciado entero exacto y
-    // alturas que cambian para dar sensacion de actividad.
+    // 2 bars per session (equalizer), fixed positions with exact integer spacing and
+    // heights that change to give a sense of activity.
     clearActivityBox(display);
     const uint8_t w = activityAnimation.frameW;
     const uint8_t h = activityAnimation.frameH;
@@ -2116,7 +2116,7 @@ void drawSessionBars(Adafruit_SSD1306 &display, uint8_t sessions)
 
     const uint16_t spacing = w / bars;
     const uint16_t period = spacing * bars;
-    // Pegado al borde DERECHO del box; el sobrante queda como margen a la izquierda.
+    // Stuck to the RIGHT edge of the box; the leftover stays as left margin.
     const int16_t startX = activityBoxX() + (w - period);
     const uint8_t tall = h;
     const uint8_t mid = ((h * 2) / 3 >= 1) ? (h * 2) / 3 : 1;
@@ -2133,7 +2133,7 @@ void drawSessionBars(Adafruit_SSD1306 &display, uint8_t sessions)
 
 void drawSessionActivity(Adafruit_SSD1306 &display, uint8_t sessions, uint8_t animIndex)
 {
-    // Estilos discretos: codifican el conteo (2 figuras por sesion). El resto: animacion pura.
+    // Discrete styles: encode the count (2 shapes per session). The rest: pure animation.
     if (activityStyle == "stars-right")
     {
         drawSessionMarch(display, sessions, true);
@@ -2148,7 +2148,7 @@ void drawSessionActivity(Adafruit_SSD1306 &display, uint8_t sessions, uint8_t an
     }
     else if (activityAnimation.valid)
     {
-        // spinner / pulse / ball / wave / worm: se reproduce el paquete del servicio sin conteo.
+        // spinner / pulse / ball / wave / worm: the service packet plays without a count.
         drawActivityFrame(display, animIndex % activityAnimation.frameCount);
     }
     else
@@ -2167,7 +2167,7 @@ void serviceDisplayActivity(Adafruit_SSD1306 &display, const bool ready, const S
     const bool waiting = (activity == "waiting");
     const bool busy = (activity == "busy");
 
-    // Espera al usuario: la pantalla parpadea invertida para llamar la atencion.
+    // Waiting for the user: the screen blinks inverted to grab attention.
     if (waiting && activityAnimation.invertOnWaiting)
     {
         if (nowMs - runtime.lastInvertToggleMs >= activityAnimation.blinkMs)
@@ -2185,8 +2185,8 @@ void serviceDisplayActivity(Adafruit_SSD1306 &display, const bool ready, const S
         display.invertDisplay(false);
     }
 
-    // Ocupado: el estilo decide. Los estilos discretos dibujan 2 figuras por sesion en
-    // paralelo (conteo); el resto reproduce la animacion empaquetada del servicio.
+    // Busy: the style decides. Discrete styles draw 2 shapes per session in
+    // parallel (count); the rest plays the packaged animation from the service.
     if (busy && activityAnimation.valid && framesReceived)
     {
         const bool firstStep = !runtime.animActive;
@@ -2208,7 +2208,7 @@ void serviceDisplayActivity(Adafruit_SSD1306 &display, const bool ready, const S
         return;
     }
 
-    // Sin actividad: si quedaba un frame pintado, limpia la esquina una sola vez.
+    // No activity: if a frame was still painted, clear the corner just once.
     if (runtime.animActive)
     {
         runtime.animActive = false;
@@ -2219,14 +2219,14 @@ void serviceDisplayActivity(Adafruit_SSD1306 &display, const bool ready, const S
 
 void updateActivityEffects()
 {
-    // Solo sobre frames reales (no en boot logs, emergencia ni offline).
+    // Only over real frames (not on boot logs, emergency or offline).
     if (liveLogDisplayEnabled || !framesReceived || emergencyWifiActive)
     {
         return;
     }
 
     const uint32_t nowMs = millis();
-    // Pantallas intercambiadas: el OLED "claude" muestra contenido, actividad Y conteo de Codex.
+    // Swapped displays: the "claude" OLED shows Codex content, activity AND session count.
     serviceDisplayActivity(claudeOled, settings.claudeDisplay.enabled && claudeDisplayReady, codexContentActivity, codexBusySessions, claudeRuntime, nowMs);
     serviceDisplayActivity(codexOled, settings.codexDisplay.enabled && codexDisplayReady, claudeContentActivity, claudeBusySessions, codexRuntime, nowMs);
 }
@@ -2239,7 +2239,7 @@ bool connectToWifi(const uint32_t timeoutMs)
     WiFi.setHostname(ESP_HOSTNAME);
     WiFi.begin(settings.wifi.ssid.c_str(), settings.wifi.password.c_str());
 
-    logPrint(String("Conectando a ") + settings.wifi.ssid);
+    logPrint(String("Connecting to ") + settings.wifi.ssid);
     const uint32_t startMs = millis();
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < timeoutMs)
     {
@@ -2251,15 +2251,15 @@ bool connectToWifi(const uint32_t timeoutMs)
     {
         WiFi.disconnect(false, false);
         logPrintlnEmpty();
-        logPrint(String("WiFi fallo. SSID: "));
+        logPrint(String("WiFi failed. SSID: "));
         logPrintln(settings.wifi.ssid);
         return false;
     }
 
     logPrintlnEmpty();
-    logPrint(String("WiFi conectado. IP: "));
+    logPrint(String("WiFi connected. IP: "));
     logPrintln(WiFi.localIP().toString());
-    logPrint(String("Hostname local: "));
+    logPrint(String("Local hostname: "));
     logPrintln(String(LOCAL_DOMAIN));
     return true;
 }
@@ -2271,16 +2271,16 @@ void startEmergencyWifi()
     WiFi.mode(WIFI_AP);
     const bool accessPointStarted = WiFi.softAP(EMERGENCY_AP_SSID, EMERGENCY_AP_PASSWORD);
     monitorState.serviceOnline = false;
-    monitorState.serviceError = "Modo WiFi emergencia";
+    monitorState.serviceError = "Emergency WiFi mode";
 
     if (!accessPointStarted)
     {
         liveLogDisplayEnabled = true;
-        logPrintln(String("No se pudo crear el WiFi de emergencia."));
+        logPrintln(String("Could not create the emergency WiFi."));
         return;
     }
 
-    logPrint(String("WiFi emergencia activo SSID="));
+    logPrint(String("Emergency WiFi active SSID="));
     logPrint(String(EMERGENCY_AP_SSID));
     logPrint(String(" IP="));
     logPrintln(WiFi.softAPIP().toString());
@@ -2299,7 +2299,7 @@ void ensureWifiConnected()
         return;
     }
 
-    logPrintln(String("WiFi desconectado. Reintentando conexion."));
+    logPrintln(String("WiFi disconnected. Retrying connection."));
     if (!connectToWifi(WIFI_CONNECT_TIMEOUT_MS))
     {
         startEmergencyWifi();
@@ -2356,7 +2356,7 @@ void handleSaveConfig()
 
         if (nextSsid.length() == 0 || nextSsid.length() > 32)
         {
-            server.send(400, "application/json", String("{\"status\":\"error\",\"message\":\"El SSID WiFi debe tener entre 1 y 32 caracteres.\"}"));
+            server.send(400, "application/json", String("{\"status\":\"error\",\"message\":\"The WiFi SSID must be between 1 and 32 characters.\"}"));
             return;
         }
 
@@ -2374,7 +2374,7 @@ void handleSaveConfig()
             {
                 if (nextPassword.length() < 8 || nextPassword.length() > 63)
                 {
-                    server.send(400, "application/json", String("{\"status\":\"error\",\"message\":\"La clave WiFi debe tener entre 8 y 63 caracteres.\"}"));
+                    server.send(400, "application/json", String("{\"status\":\"error\",\"message\":\"The WiFi password must be between 8 and 63 characters.\"}"));
                     return;
                 }
 
@@ -2433,23 +2433,23 @@ void handleOtaUpload()
         webOtaBytes = 0;
         webOtaError = false;
         webOtaRestartPending = false;
-        webOtaStatus = String("Recibiendo ") + upload.filename;
+        webOtaStatus = String("Receiving ") + upload.filename;
 
         if (!upload.filename.endsWith(".bin"))
         {
             webOtaError = true;
-            webOtaStatus = "El archivo debe terminar en .bin.";
+            webOtaStatus = "The file must end in .bin.";
             return;
         }
 
         if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
         {
             webOtaError = true;
-            webOtaStatus = String("No se pudo iniciar la actualizacion: ") + Update.errorString();
+            webOtaStatus = String("Could not start the update: ") + Update.errorString();
             return;
         }
 
-        logPrint(String("OTA web iniciada: "));
+        logPrint(String("Web OTA started: "));
         logPrintln(upload.filename);
         return;
     }
@@ -2466,7 +2466,7 @@ void handleOtaUpload()
         if (writtenBytes != upload.currentSize)
         {
             webOtaError = true;
-            webOtaStatus = String("Error escribiendo firmware: ") + Update.errorString();
+            webOtaStatus = String("Error writing firmware: ") + Update.errorString();
         }
         return;
     }
@@ -2482,19 +2482,19 @@ void handleOtaUpload()
         if (!Update.end(true))
         {
             webOtaError = true;
-            webOtaStatus = String("No se pudo finalizar la actualizacion: ") + Update.errorString();
+            webOtaStatus = String("Could not finalize the update: ") + Update.errorString();
             return;
         }
 
         webOtaBytes = upload.totalSize;
-        webOtaStatus = String("Firmware recibido: ") + String(webOtaBytes) + String(" bytes.");
+        webOtaStatus = String("Firmware received: ") + String(webOtaBytes) + String(" bytes.");
     }
 
     if (upload.status == UPLOAD_FILE_ABORTED)
     {
         Update.abort();
         webOtaError = true;
-        webOtaStatus = "Carga cancelada antes de terminar.";
+        webOtaStatus = "Upload canceled before finishing.";
     }
 }
 
@@ -2512,20 +2512,20 @@ void startWebServer()
     server.on("/ota/upload", HTTP_POST, sendOtaUploadResult, handleOtaUpload);
     server.begin();
 
-    logPrintln(String("Servidor web listo en puerto 80"));
+    logPrintln(String("Web server ready on port 80"));
 }
 
 void startMdnsServices()
 {
     if (!MDNS.begin(ESP_HOSTNAME))
     {
-        logPrintln(String("No se pudo iniciar mDNS."));
+        logPrintln(String("Could not start mDNS."));
         return;
     }
 
     MDNS.addService("http", "tcp", HTTP_PORT);
     MDNS.enableArduino(OTA_PORT, String(OTA_PASSWORD).length() > 0);
-    logPrint(String("mDNS listo: "));
+    logPrint(String("mDNS ready: "));
     logPrintln(String(LOCAL_DOMAIN));
 }
 
@@ -2537,12 +2537,12 @@ void startOta()
     ArduinoOTA.setMdnsEnabled(false);
 
     ArduinoOTA.onStart([]() {
-        logPrintln(String("OTA PlatformIO iniciada"));
+        logPrintln(String("PlatformIO OTA started"));
     });
 
     ArduinoOTA.onEnd([]() {
         logPrintlnEmpty();
-        logPrintln(String("OTA PlatformIO finalizada"));
+        logPrintln(String("PlatformIO OTA finished"));
     });
 
     ArduinoOTA.onError([](const ota_error_t error) {
@@ -2551,7 +2551,7 @@ void startOta()
     });
 
     ArduinoOTA.begin();
-    logPrint(String("OTA listo. Hostname: "));
+    logPrint(String("OTA ready. Hostname: "));
     logPrintln(String(OTA_HOSTNAME));
 }
 
@@ -2559,22 +2559,22 @@ void setup()
 {
     Serial.begin(SERIAL_BAUD_RATE);
     delay(1000);
-    logPrintln(String("Arranque ESP32 Monitor"));
+    logPrintln(String("ESP32 Monitor boot"));
 
     monitorState.serviceOnline = false;
-    monitorState.serviceError = "Sin consulta inicial";
+    monitorState.serviceError = "No initial query";
     monitorState.lastPollMs = 0;
     monitorState.lastSuccessMs = 0;
     monitorState.frameUpdatedAtMs = 0;
 
     loadSettings();
-    logPrint(String("Servicio frames: "));
+    logPrint(String("Frames service: "));
     logPrintln(settings.serviceUrl);
     initializeDisplays();
     logPrint(String("OLED Claude: "));
-    logPrintln(claudeDisplayReady ? String("OK") : String("no disponible"));
+    logPrintln(claudeDisplayReady ? String("OK") : String("not available"));
     logPrint(String("OLED Codex: "));
-    logPrintln(codexDisplayReady ? String("OK") : String("no disponible"));
+    logPrintln(codexDisplayReady ? String("OK") : String("not available"));
     const bool wifiConnected = connectToWifi(WIFI_CONNECT_TIMEOUT_MS);
     if (!wifiConnected)
     {
@@ -2585,8 +2585,8 @@ void setup()
     {
         startMdnsServices();
         startOta();
-        // Dispara el primer fetch de frames de inmediato en el loop (sin bloquear setup):
-        // dejar lastPoll un intervalo atras hace que serviceFramesFetch arranque ya.
+        // Triggers the first frame fetch immediately in the loop (without blocking setup):
+        // leaving lastPoll one interval back makes serviceFramesFetch start right away.
         monitorState.lastPollMs = millis() - settings.pollIntervalMs;
         fetchActivityAnimation();
     }
@@ -2598,7 +2598,7 @@ void loop()
 
     if (configRestartPending && millis() >= configRestartAtMs)
     {
-        logPrintln(String("Reiniciando por cambio de WiFi"));
+        logPrintln(String("Restarting due to WiFi change"));
         ESP.restart();
     }
 
@@ -2615,21 +2615,21 @@ void loop()
 
     ArduinoOTA.handle();
 
-    // Fetch de frames no bloqueante: arranca cada pollInterval y se lee por trozos sin
-    // congelar el loop (antes era un GET sincrono que pausaba el render ~1s).
+    // Non-blocking frame fetch: starts every pollInterval and is read in chunks without
+    // freezing the loop (previously a synchronous GET that paused the render ~1s).
     serviceFramesFetch();
 
-    // Si el servicio anuncia otra version de animacion, se re-descarga y almacena.
+    // If the service announces another animation version, it is re-downloaded and stored.
     if (pendingAnimEtag.length() > 0 && pendingAnimEtag != activityAnimationEtag)
     {
         fetchActivityAnimation();
     }
 
-    // Long-poll no bloqueante: actualiza claude/codexContentActivity casi al instante.
+    // Non-blocking long-poll: updates claude/codexContentActivity almost instantly.
     serviceActivityLongPoll();
 
-    // Salvapantallas anti burn-in: si el servicio lleva un rato caido, en vez de dejar
-    // la imagen fija se renderiza a pantalla completa la animacion elegida en config.
+    // Anti burn-in screensaver: if the service has been down for a while, instead of
+    // leaving the fixed image, the animation chosen in config is rendered full screen.
     const bool serviceDownLongEnough = !monitorState.serviceOnline &&
                                        (millis() - monitorState.lastSuccessMs) > SAVER_GRACE_MS;
     if (serviceDownLongEnough)
@@ -2649,13 +2649,13 @@ void loop()
     else
     {
         saverRunning = false;
-        // Anima la esquina (ocupado) o invierte la pantalla (esperando respuesta).
+        // Animates the corner (busy) or inverts the screen (waiting for a response).
         updateActivityEffects();
     }
 
     if (webOtaRestartPending && millis() >= webOtaRestartAtMs)
     {
-        logPrintln(String("Reiniciando por OTA web"));
+        logPrintln(String("Restarting due to web OTA"));
         ESP.restart();
     }
 }

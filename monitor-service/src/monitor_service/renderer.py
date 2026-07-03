@@ -6,34 +6,34 @@ from PIL import Image, ImageDraw
 
 from monitor_service.types import ToolSnapshot, UsageWindowSnapshot
 
-# Dimensiones del OLED SSD1306 del ESP32.
+# Dimensions of the ESP32's SSD1306 OLED.
 WIDTH = 128
 HEIGHT = 64
 
-# Pantalla de arranque/espera (debe coincidir con la del firmware en main.cpp):
-# mascot a la izquierda dentro de un marco de pixeles blancos. Se reutiliza para el
-# frame de "esperando cache" del servicio para que se vea igual que al arrancar.
+# Boot/wait screen (must match the firmware's in main.cpp):
+# mascot on the left inside a frame of white pixels. Reused for the
+# service's "waiting for cache" frame so it looks the same as at boot.
 BOOT_MASCOT_CX = 22
 BOOT_MASCOT_CY = 24
 BOOT_DIVIDER_X = 43
 BOOT_LOG_X = 47
 
-# Recuadro reservado en la esquina superior derecha: el firmware del ESP32 dibuja ahí
-# la animación de actividad y aquí solo se evita poner contenido. El tamaño llega desde
-# la config (activity_animation.frame_width/height) vía set_activity_box, para que el
-# borde derecho del texto de cabecera se ajuste a un recuadro de tamaño dinámico.
-# Por defecto banda baja y ancha (48x5): cabe sobre la divisoria del tema.
+# Reserved box in the top-right corner: the ESP32 firmware draws the activity
+# animation there and here we just avoid placing content. The size comes from
+# the config (activity_animation.frame_width/height) via set_activity_box, so the
+# right edge of the header text adjusts to a dynamically sized box.
+# By default a low, wide band (48x5): it fits over the theme's divider.
 ACTIVITY_BOX_W = 48
 ACTIVITY_BOX_H = 5
 ACTIVITY_BOX_X = WIDTH - ACTIVITY_BOX_W
 ACTIVITY_BOX_Y = 0
-# Borde derecho disponible para el texto de cabecera que comparte la franja del recuadro.
+# Right edge available for the header text that shares the box's band.
 CONTENT_RIGHT_X = ACTIVITY_BOX_X - 2
 
 
 def set_activity_box(width: int, height: int) -> None:
-    # Ajusta el recuadro reservado al tamaño elegido en la config (anclado al borde
-    # derecho). Sigue el mismo patrón de estado de módulo que set_device_ip.
+    # Adjusts the reserved box to the size chosen in the config (anchored to the right
+    # edge). Follows the same module-state pattern as set_device_ip.
     global ACTIVITY_BOX_W, ACTIVITY_BOX_H, ACTIVITY_BOX_X, CONTENT_RIGHT_X
     ACTIVITY_BOX_W = max(1, min(WIDTH, width))
     ACTIVITY_BOX_H = max(1, min(HEIGHT, height))
@@ -43,7 +43,7 @@ def set_activity_box(width: int, height: int) -> None:
 
 DEFAULT_THEME = "delta"
 
-# IP del ESP32 (la fija main.py al recibir los frames).
+# ESP32 IP (set by main.py when receiving the frames).
 _device_ip = ""
 
 
@@ -51,15 +51,15 @@ def set_device_ip(ip: str) -> None:
     global _device_ip
     _device_ip = ip
 
-# Catálogo de temas para la página de configuración (id + etiqueta visible).
+# Theme catalog for the configuration page (id + visible label).
 THEME_DEFINITIONS = [
     {"id": "delta", "label": "Delta"},
 ]
 
 
 # ---------------------------------------------------------------------------
-# Fuente de píxeles 3x5 hecha a mano (números, letras y símbolos) usada por el
-# render estilo terminal.
+# Hand-made 3x5 pixel font (numbers, letters and symbols) used by the
+# terminal-style render.
 # ---------------------------------------------------------------------------
 
 GLYPHS_3X5: dict[str, tuple[str, str, str, str, str]] = {
@@ -150,14 +150,14 @@ def _draw_glyphs_right(image: Image.Image, right_x: int, y: int, text: str, scal
 
 
 # ---------------------------------------------------------------------------
-# Tema "delta": estilo terminal con columnas restante / delta / reset, barra
-# sólida con marca de lo esperado por la regresión lineal.
+# "delta" theme: terminal style with remaining / delta / reset columns, solid
+# bar with a mark of what the linear regression expects.
 # ---------------------------------------------------------------------------
 
 
 def _fmt_reset_clock(reset_in_seconds: int) -> str:
-    # Para >= 24h se muestra la duración (XdYh); para menos, la HORA LOCAL real
-    # a la que se resetea (hora actual + lo que falta), no una cuenta regresiva.
+    # For >= 24h it shows the duration (XdYh); for less, the real LOCAL TIME
+    # at which it resets (current time + what remains), not a countdown.
     seconds = max(0, reset_in_seconds)
     if seconds >= 24 * 3600:
         hours = seconds // 3600
@@ -167,7 +167,7 @@ def _fmt_reset_clock(reset_in_seconds: int) -> str:
 
 
 def _fmt_reset_remaining(reset_in_seconds: int) -> str:
-    # Tiempo restante para el reset en horas y minutos (p.ej. 2H05M; 45M si <1h).
+    # Time remaining until the reset in hours and minutes (e.g. 2H05M; 45M if <1h).
     seconds = max(0, reset_in_seconds)
     total_minutes = seconds // 60
     hours = total_minutes // 60
@@ -186,10 +186,10 @@ def _delta_bar(
     remaining_ratio: float,
     expected_ratio: float,
 ) -> None:
-    # Barra sólida hasta el % restante real. El tramo entre lo actual y lo
-    # esperado (regresión lineal) se marca: superávit (delta positivo) lleva 1px
-    # negro arriba y abajo dentro del sólido; déficit (delta negativo) lleva
-    # puntos dispersos desde lo actual hasta lo esperado.
+    # Solid bar up to the real remaining %. The span between the current and the
+    # expected (linear regression) is marked: surplus (positive delta) has 1px
+    # black above and below inside the solid; deficit (negative delta) has
+    # scattered dots from the current to the expected.
     draw.rectangle((x0, y0, x1, y1), outline=1)
     inner_x0 = x0 + 2
     inner_y0 = y0 + 2
@@ -198,20 +198,20 @@ def _delta_bar(
     actual_x = inner_x0 + int(available * max(0.0, min(1.0, remaining_ratio)))
     expected_x = inner_x0 + int(available * max(0.0, min(1.0, expected_ratio)))
 
-    # Relleno sólido hasta lo actual.
+    # Solid fill up to the current.
     if actual_x > inner_x0:
         draw.rectangle((inner_x0, inner_y0, actual_x, inner_y1), fill=1)
 
     if actual_x >= expected_x:
-        # Superávit: tramo extra (de lo esperado a lo actual) con 1px negro arriba
-        # y abajo dentro del sólido, dejando una banda blanca al centro.
+        # Surplus: extra span (from the expected to the current) with 1px black above
+        # and below inside the solid, leaving a white band in the center.
         draw.line((expected_x, inner_y0, actual_x, inner_y0), fill=0)
         draw.line((expected_x, inner_y1, actual_x, inner_y1), fill=0)
     else:
-        # Déficit: puntos dispersos desde lo actual hasta lo esperado. El offset de 2px
-        # separa los puntos del relleno sólido; pero con 0% restante no hay sólido y ese
-        # offset dejaba un hueco negro pegado al borde interior izquierdo. En ese caso se
-        # arranca justo en el borde para que el patrón disperso llegue hasta la izquierda.
+        # Deficit: scattered dots from the current to the expected. The 2px offset
+        # separates the dots from the solid fill; but with 0% remaining there is no solid and that
+        # offset left a black gap stuck to the inner left edge. In that case it
+        # starts right at the edge so the scattered pattern reaches the left.
         start_px = actual_x + 2 if actual_x > inner_x0 else inner_x0
         for px in range(start_px, expected_x + 1, 2):
             for py in range(inner_y0, inner_y1 + 1, 2):
@@ -227,8 +227,8 @@ def _draw_delta_window_bar(
 
 
 def _pace_delta_text(window: UsageWindowSnapshot) -> str:
-    # Delta entre lo restante y lo esperado: positivo = margen extra disponible
-    # (vas por debajo del ritmo), negativo = vas pasado del ritmo.
+    # Delta between the remaining and the expected: positive = extra margin available
+    # (you are below the pace), negative = you are past the pace.
     delta = int(round(window["remaining_percent"] - window["expected_remaining_percent"]))
     if delta > 0:
         return f"+{delta}%"
@@ -236,9 +236,9 @@ def _pace_delta_text(window: UsageWindowSnapshot) -> str:
 
 
 def _split_reset_units(reset_text: str) -> tuple[str, str]:
-    # Separa el reset en (unidad mayor, unidad menor) tras la primera letra de
-    # unidad: "2H05M" -> ("2H", "05M"), "5D12H" -> ("5D", "12H"). Si no hay
-    # segunda unidad ("45M", "14:30") el resto queda vacío.
+    # Splits the reset into (major unit, minor unit) after the first unit
+    # letter: "2H05M" -> ("2H", "05M"), "5D12H" -> ("5D", "12H"). If there is no
+    # second unit ("45M", "14:30") the rest is empty.
     for index, char in enumerate(reset_text):
         if char in ("H", "D") and index + 1 < len(reset_text):
             return (reset_text[: index + 1], reset_text[index + 1 :])
@@ -254,13 +254,13 @@ def _draw_reset_right(
     gap: int,
     unit_gap_px: int,
 ) -> int:
-    # Reset alineado a la derecha; con unit_gap_px > 0 AGREGA ese hueco negro sobre
-    # la separacion normal entre la unidad mayor y la menor (horas|minutos, dias|horas).
+    # Reset right-aligned; with unit_gap_px > 0 it ADDS that black gap on top of
+    # the normal separation between the major and minor unit (hours|minutes, days|hours).
     head, tail = _split_reset_units(reset_text)
     if unit_gap_px <= 0 or tail == "":
         return _draw_glyphs_right(image, right_x, top_y, reset_text, scale, gap)
 
-    # Hueco del borde = separacion normal entre glifos (gap * scale) + el extra pedido.
+    # Edge gap = normal separation between glyphs (gap * scale) + the requested extra.
     boundary_gap = gap * scale + unit_gap_px
     tail_sprite = _glyph_image(tail, scale, gap)
     head_sprite = _glyph_image(head, scale, gap)
@@ -282,10 +282,10 @@ def _detailed_block(
 ) -> None:
     remaining = int(round(max(0.0, min(100.0, window["remaining_percent"]))))
 
-    # Fila de valores: restante (izq), texto central, reset (der). El reset va pegado
-    # al borde derecho (sin hueco) tanto si quedan días como si solo quedan minutos.
-    # El texto central se centra dentro del hueco real entre la columna izquierda
-    # y la de reset, no sobre el ancho total, para que no parezca pegado a un lado.
+    # Values row: remaining (left), center text, reset (right). The reset sits flush
+    # against the right edge (no gap) whether days remain or only minutes remain.
+    # The center text is centered within the real gap between the left column
+    # and the reset one, not over the total width, so it does not look stuck to one side.
     left_width = _draw_glyphs(image, 0, top_y, f"{remaining}%", 2, 1)
     right_width = _draw_reset_right(image, WIDTH, top_y, reset_text, 2, 1, unit_gap_px)
     center_sprite = _glyph_image(center_text, 2, 1)
@@ -294,17 +294,17 @@ def _detailed_block(
     center_x = gap_start + (gap_end - gap_start - center_sprite.width) // 2
     _paste(image, center_x, top_y, center_sprite)
 
-    # Barra de uso grande (el estilo lo decide cada tema vía draw_bar).
+    # Large usage bar (the style is decided by each theme via draw_bar).
     draw_bar(draw, 0, top_y + 12, WIDTH - 1, top_y + 23, window)
 
 
 def _last_octet(ip: str) -> str:
-    # Devuelve el último octeto de una IPv4 (p.ej. "192.168.1.198" -> "198").
+    # Returns the last octet of an IPv4 (e.g. "192.168.1.198" -> "198").
     return ip.rsplit(".", 1)[-1]
 
 
 def _truncate_glyphs_to(text: str, start_x: int, right_x: int) -> str:
-    # Recorta el texto (fuente 3x5 con 1 px de separación) para que no rebase right_x.
+    # Trims the text (3x5 font with 1 px separation) so it does not overflow right_x.
     available = right_x - start_x
     if available <= 0:
         return ""
@@ -319,30 +319,30 @@ def _render_detailed_columns(
     draw_bar: Callable[[ImageDraw.ImageDraw, int, int, int, int, UsageWindowSnapshot], None],
     unit_gap_px: int,
 ) -> Image.Image:
-    # Render base estilo terminal del tema "delta": center_text decide el texto de la
-    # columna central y draw_bar el estilo de barra.
+    # Terminal-style base render of the "delta" theme: center_text decides the text of the
+    # center column and draw_bar the bar style.
     image = Image.new("1", (WIDTH, HEIGHT), 0)
     draw = ImageDraw.Draw(image)
 
-    # Cabecera compacta estilo terminal (letras de 1 px): ">_ ETIQUETA  IP: x.x.x.x" + indicador.
+    # Compact terminal-style header (1 px letters): ">_ LABEL  IP: x.x.x.x" + indicator.
     prompt_width = _draw_glyphs(image, 0, 1, ">_", 1, 1)
     label_width = _draw_glyphs(image, prompt_width + 3, 1, label.upper(), 1, 1)
     if _device_ip != "":
         ip_start_x = prompt_width + label_width + 8
-        # Solo el último octeto: deja más espacio horizontal a la animación de la esquina.
+        # Only the last octet: leaves more horizontal space for the corner animation.
         ip_text = _truncate_glyphs_to(f"IP:{_last_octet(_device_ip)}", ip_start_x, CONTENT_RIGHT_X)
         _draw_glyphs(image, ip_start_x, 1, ip_text, 1, 1)
-    # La divisoria se mantiene a todo el ancho (no se corta bajo la animación).
+    # The divider stays full width (it is not cut off under the animation).
     draw.line((0, 8, WIDTH - 1, 8), fill=1)
 
-    # Se deja libre la última fila (y=63): en el OLED real se ve arriba (wrap).
+    # The last row (y=63) is left free: on the real OLED it shows at the top (wrap).
     current = snapshot["current"]
     weekly = snapshot["weekly"]
-    # Ventana de 5h: horas y minutos restantes para el reset.
+    # 5h window: hours and minutes remaining until the reset.
     _detailed_block(
         image, draw, 10, current, center_text(current), _fmt_reset_remaining(current["reset_in_seconds"]), draw_bar, unit_gap_px
     )
-    # Ventana semanal: días y horas (o hora local si falta < 24h).
+    # Weekly window: days and hours (or local time if < 24h remain).
     _detailed_block(
         image, draw, 38, weekly, center_text(weekly), _fmt_reset_clock(weekly["reset_in_seconds"]), draw_bar, unit_gap_px
     )
@@ -351,14 +351,14 @@ def _render_detailed_columns(
 
 
 def _render_delta(label: str, snapshot: ToolSnapshot) -> Image.Image:
-    # Columna central con el delta numérico (+10% margen extra / -5% pasado) y
-    # barra sólida con marca de lo esperado por la regresión lineal.
-    # unit_gap_px=1: 1 px negro entre horas|minutos y dias|horas en el reset.
+    # Center column with the numeric delta (+10% extra margin / -5% past) and
+    # solid bar with a mark of what the linear regression expects.
+    # unit_gap_px=1: 1 px black between hours|minutes and days|hours in the reset.
     return _render_detailed_columns(label, snapshot, _pace_delta_text, _draw_delta_window_bar, 4)
 
 
 # ---------------------------------------------------------------------------
-# Registro de temas.
+# Theme registry.
 # ---------------------------------------------------------------------------
 
 _THEMES: dict[str, Callable[[str, ToolSnapshot], Image.Image]] = {
@@ -367,21 +367,21 @@ _THEMES: dict[str, Callable[[str, ToolSnapshot], Image.Image]] = {
 
 
 def render_tool_image(label: str, snapshot: ToolSnapshot, theme: str) -> Image.Image:
-    # Dibuja la pantalla completa 128x64 (1 bit) según el tema elegido. La esquina
-    # superior derecha (ACTIVITY_BOX_*) se deja libre de contenido a propósito: ahí
-    # el firmware del ESP32 superpone la animación de actividad.
+    # Draws the full 128x64 (1 bit) screen according to the chosen theme. The top-right
+    # corner (ACTIVITY_BOX_*) is left free of content on purpose: there
+    # the ESP32 firmware overlays the activity animation.
     renderer = _THEMES.get(theme, _THEMES[DEFAULT_THEME])
     return renderer(label, snapshot)
 
 
 def pack_frame(image: Image.Image) -> bytes:
-    # Empaqueta a formato Adafruit drawBitmap: row-major, MSB primero,
-    # filas alineadas a byte. Para 128 px de ancho son 16 bytes por fila.
+    # Packs to Adafruit drawBitmap format: row-major, MSB first,
+    # byte-aligned rows. For 128 px width that is 16 bytes per row.
     return image.convert("1").tobytes()
 
 
 def _draw_mascot_claude(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
-    # "Spark" de Claude: 12 rayos radiales desde el centro (igual que el firmware).
+    # Claude's "Spark": 12 radial rays from the center (same as the firmware).
     inner_radius = 2.5
     outer_radius = 11.0
     for index in range(12):
@@ -399,7 +399,7 @@ def _draw_mascot_claude(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
 
 
 def _draw_mascot_codex(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
-    # Codex: ventana de terminal con el prompt ">_" (igual que el firmware).
+    # Codex: terminal window with the ">_" prompt (same as the firmware).
     width = 28
     height = 22
     x = cx - width // 2
@@ -408,14 +408,14 @@ def _draw_mascot_codex(draw: ImageDraw.ImageDraw, cx: int, cy: int) -> None:
     draw.line((x + 1, y + 6, x + width - 2, y + 6), fill=1)
     draw.ellipse((x + 3, y + 2, x + 5, y + 4), fill=1)
     draw.ellipse((x + 7, y + 2, x + 9, y + 4), fill=1)
-    # Prompt ">_" dibujado con líneas para no depender de una fuente.
+    # ">_" prompt drawn with lines so it does not depend on a font.
     draw.line((x + 6, y + 10, x + 9, y + 13), fill=1)
     draw.line((x + 9, y + 13, x + 6, y + 16), fill=1)
     draw.line((x + 11, y + 16, x + 15, y + 16), fill=1)
 
 
 def draw_boot_decor(image: Image.Image, is_claude: bool) -> None:
-    # Marco de pixeles blancos + mascot + divisor, en sitio. El texto lo añade quien llama.
+    # Frame of white pixels + mascot + divider, in place. The text is added by the caller.
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, WIDTH - 1, HEIGHT - 1), outline=1)
     if is_claude:

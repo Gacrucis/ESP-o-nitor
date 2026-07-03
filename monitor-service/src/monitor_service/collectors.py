@@ -8,7 +8,7 @@ from monitor_service.config import clamp_percent
 from monitor_service.logutil import log_event
 from monitor_service.types import ToolUsageReading, UsageWindowConfig
 
-# Minutos por ventana de Codex (primary = 5h, secondary = semanal).
+# Minutes per Codex window (primary = 5h, secondary = weekly).
 CODEX_PRIMARY_MINUTES = 300
 CODEX_SECONDARY_MINUTES = 10080
 _codex_cache_lock = threading.Lock()
@@ -20,30 +20,30 @@ def read_json_object(path: Path) -> dict[str, Any]:
     try:
         raw_value = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except JSONDecodeError as error:
-        raise RuntimeError(f"JSON inválido en {path}: {error}") from error
+        raise RuntimeError(f"Invalid JSON in {path}: {error}") from error
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {path}: {error}") from error
+        raise RuntimeError(f"Could not read {path}: {error}") from error
 
     if not isinstance(raw_value, dict):
-        raise RuntimeError(f"{path} debe contener un objeto JSON")
+        raise RuntimeError(f"{path} must contain a JSON object")
 
     return cast(dict[str, Any], raw_value)
 
 
 def get_claude_waiting_status(claude_home: Path, current_ms: int, stale_seconds: int) -> tuple[bool, str]:
-    # Espera si CUALQUIER sesion fresca pide input, no solo la mas reciente: el detector debe
-    # avisar de cualquier ventana/job que requiera intervencion, y muchas veces esa pregunta
-    # esta en otra sesion. Mirar solo la mas reciente producia un flash: mientras un chat tiene
-    # el dialogo abierto, otra sesion trabajando en paralelo "ganaba" por updatedAt y apagaba la
-    # espera, para volver a encenderse al siguiente sondeo. El filtro de frescura descarta
-    # sesiones obsoletas. Se reporta el texto de la sesion en espera actualizada mas recientemente.
+    # Waits if ANY fresh session asks for input, not only the most recent one: the detector must
+    # flag any window/job that needs intervention, and often that question is in another session.
+    # Looking only at the most recent one produced a flash: while one chat has the dialog open,
+    # another session working in parallel "won" by updatedAt and turned off the wait, only to turn
+    # back on at the next poll. The freshness filter discards stale sessions. It reports the text
+    # of the most recently updated waiting session.
     sessions_path = claude_home / "sessions"
     if not sessions_path.exists():
-        return (False, "No existe sessions/")
+        return (False, "No sessions/ found")
 
     stale_ms = stale_seconds * 1000
     newest_updated_at = -1
-    newest_status = "Sin sesiones activas"
+    newest_status = "No active sessions"
     newest_waiting_updated_at = -1
     waiting_text = ""
     any_waiting = False
@@ -74,12 +74,12 @@ def get_claude_waiting_status(claude_home: Path, current_ms: int, stale_seconds:
 
 
 def get_claude_busy(claude_home: Path, current_ms: int, stale_seconds: int, include_subagents: bool) -> bool:
-    # Claude Code mantiene en sessions/<pid>.json un campo status ("busy"/"idle"/"waiting").
-    # Busy si CUALQUIER sesión no obsoleta está "busy", no solo la de updatedAt más
-    # reciente: abrir o resolver otro chat no debe apagar la animación mientras un chat
-    # previo sigue pensando. Con include_subagents activo, tambien cuenta como busy una sesion
-    # idle con un workflow o subagentes corriendo en background: el orquestador cerro turno
-    # pero espera a que terminen, asi que para el medidor sigue trabajando.
+    # Claude Code keeps a status field ("busy"/"idle"/"waiting") in sessions/<pid>.json.
+    # Busy if ANY non-stale session is "busy", not only the one with the most recent
+    # updatedAt: opening or resolving another chat must not turn off the animation while a
+    # previous chat is still thinking. With include_subagents on, an idle session with a
+    # workflow or subagents running in background also counts as busy: the orchestrator closed
+    # its turn but is waiting for them to finish, so for the meter it is still working.
     sessions_path = claude_home / "sessions"
     if not sessions_path.exists():
         return False
@@ -109,9 +109,9 @@ def get_claude_busy(claude_home: Path, current_ms: int, stale_seconds: int, incl
 
 
 def count_busy_claude_sessions(claude_home: Path, current_ms: int, stale_seconds: int) -> int:
-    # Cuenta sessionIds DISTINTOS con status "busy" dentro de la ventana de frescura: cuantas
-    # sesiones de Claude estan trabajando en paralelo ahora mismo. Alimenta el indicador de
-    # puntos del ESP (2 puntos por sesion).
+    # Counts DISTINCT sessionIds with status "busy" within the freshness window: how many
+    # Claude sessions are working in parallel right now. Feeds the ESP dots indicator
+    # (2 dots per session).
     sessions_path = claude_home / "sessions"
     if not sessions_path.exists():
         return 0
@@ -133,17 +133,17 @@ def count_busy_claude_sessions(claude_home: Path, current_ms: int, stale_seconds
     return len(busy_ids)
 
 
-# Herramientas con las que Claude Code pide intervencion explicita del usuario: una
-# pregunta estructurada o la aprobacion de un plan. Son senal de alta precision de "waiting".
+# Tools with which Claude Code requests explicit user intervention: a structured question
+# or plan approval. They are a high-precision signal of "waiting".
 _CLAUDE_QUESTION_TOOLS = frozenset({"AskUserQuestion", "ExitPlanMode"})
-# Solo se lee la cola del transcript: el cierre del ultimo turno cabe de sobra en este
-# tope y evita recorrer megabytes de historial en cada sondeo del long-poll.
+# Only the tail of the transcript is read: the close of the last turn fits well within this
+# cap and avoids scanning megabytes of history on every long-poll sample.
 _CLAUDE_TRANSCRIPT_TAIL_BYTES = 16384
 
 
 def _newest_active_session(claude_home: Path, current_ms: int, stale_ms: int) -> dict[str, Any] | None:
-    # La sesion con updatedAt mas reciente dentro de la ventana es con la que el usuario
-    # interactua ahora; las preguntas se evaluan solo sobre ella.
+    # The session with the most recent updatedAt within the window is the one the user is
+    # interacting with now; questions are evaluated only against it.
     sessions_path = claude_home / "sessions"
     if not sessions_path.exists():
         return None
@@ -163,8 +163,8 @@ def _newest_active_session(claude_home: Path, current_ms: int, stale_ms: int) ->
 
 
 def _find_claude_transcript(claude_home: Path, session_id: str) -> Path | None:
-    # El transcript vive en projects/<cwd-codificado>/<sessionId>.jsonl; no se conoce el
-    # directorio codificado, asi que se localiza por nombre de archivo (el sessionId).
+    # The transcript lives in projects/<encoded-cwd>/<sessionId>.jsonl; the encoded directory
+    # is unknown, so it is located by file name (the sessionId).
     projects_path = claude_home / "projects"
     if not projects_path.exists():
         return None
@@ -177,11 +177,11 @@ def _find_claude_transcript(claude_home: Path, session_id: str) -> Path | None:
 
 
 def _session_has_active_subagents(transcript_path: Path, current_ms: int, stale_ms: int) -> bool:
-    # Los subagentes y workflows escriben en <sessionId>/subagents/**/*.jsonl, hermano del
-    # transcript principal <sessionId>.jsonl. Si alguno se escribio dentro de la ventana de
-    # frescura, el orquestador esta supervisando trabajo en curso (no espera al usuario):
-    # sirve para descartar el falso "waiting" que produce un cierre de turno terminado en "?"
-    # mientras un workflow corre en background.
+    # Subagents and workflows write to <sessionId>/subagents/**/*.jsonl, sibling of the main
+    # transcript <sessionId>.jsonl. If any was written within the freshness window, the
+    # orchestrator is supervising work in progress (not waiting on the user): this helps discard
+    # the false "waiting" produced by a turn close ending in "?" while a workflow runs in
+    # background.
     subagents_path = transcript_path.with_suffix("") / "subagents"
     if not subagents_path.exists():
         return False
@@ -204,11 +204,11 @@ def _read_transcript_tail_events(path: Path, max_bytes: int) -> list[dict[str, A
             file_size = path.stat().st_size
             if file_size > max_bytes:
                 handle.seek(file_size - max_bytes)
-                # La primera linea tras el salto suele quedar partida; se descarta.
+                # The first line after the seek is usually cut off; it is discarded.
                 handle.readline()
             raw = handle.read()
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {path}: {error}") from error
+        raise RuntimeError(f"Could not read {path}: {error}") from error
 
     events: list[dict[str, Any]] = []
     for raw_line in raw.split(b"\n"):
@@ -225,11 +225,11 @@ def _read_transcript_tail_events(path: Path, max_bytes: int) -> list[dict[str, A
 
 
 def _assistant_event_question_text(event: dict[str, Any]) -> str | None:
-    # Devuelve el texto de espera solo si el evento cierra turno con una herramienta de
-    # pregunta estructurada (AskUserQuestion/ExitPlanMode); None en cualquier otro caso. La
-    # prosa terminada en "?" NO cuenta: el monitor avisa unicamente ante el popup real, que es
-    # senal de alta precision y no produce los falsos "waiting" de las preguntas retoricas o de
-    # cortesia con las que Claude suele cerrar un turno.
+    # Returns the waiting text only if the event closes the turn with a structured question
+    # tool (AskUserQuestion/ExitPlanMode); None in any other case. Prose ending in "?" does NOT
+    # count: the monitor flags only the real popup, which is a high-precision signal and does not
+    # produce the false "waiting" of the rhetorical or courtesy questions Claude often closes a
+    # turn with.
     if event.get("type") != "assistant":
         return None
 
@@ -248,19 +248,19 @@ def _assistant_event_question_text(event: dict[str, Any]) -> str | None:
             continue
         tool_name = block.get("name")
         if tool_name == "ExitPlanMode":
-            return "Esperando aprobacion del plan"
+            return "Waiting for plan approval"
         if tool_name == "AskUserQuestion":
-            return "Esperando tu respuesta"
-        # Cualquier otra herramienta significa que Claude va a ejecutarla: sigue ocupado.
+            return "Waiting for your response"
+        # Any other tool means Claude is going to run it: still busy.
         return None
 
     return None
 
 
 def get_claude_question_status(claude_home: Path, current_ms: int, stale_seconds: int) -> tuple[bool, str]:
-    # Para detectar que Claude te pregunta algo se inspecciona la cola del transcript de la
-    # sesion activa y se busca el cierre de turno con una herramienta de pregunta estructurada
-    # (AskUserQuestion/ExitPlanMode). La prosa terminada en "?" no se considera.
+    # To detect that Claude is asking you something, the tail of the active session's transcript
+    # is inspected looking for the turn close with a structured question tool
+    # (AskUserQuestion/ExitPlanMode). Prose ending in "?" is not considered.
     stale_ms = stale_seconds * 1000
     session = _newest_active_session(claude_home, current_ms, stale_ms)
     if session is None:
@@ -276,8 +276,8 @@ def get_claude_question_status(claude_home: Path, current_ms: int, stale_seconds
 
     events = _read_transcript_tail_events(transcript_path, _CLAUDE_TRANSCRIPT_TAIL_BYTES)
     for event in reversed(events):
-        # Los sub-agentes (Task) escriben en el mismo transcript; su turno no representa
-        # una pregunta al usuario, asi que se ignoran al buscar el cierre del turno real.
+        # Sub-agents (Task) write to the same transcript; their turn does not represent
+        # a question to the user, so they are ignored when looking for the real turn close.
         if event.get("isSidechain") is True:
             continue
         question_text = _assistant_event_question_text(event)
@@ -300,7 +300,7 @@ def get_claude_observed_usage(claude_home: Path) -> tuple[int, int]:
         try:
             handle = jsonl_path.open("r", encoding="utf-8", errors="replace")
         except OSError as error:
-            raise RuntimeError(f"No se pudo leer {jsonl_path}: {error}") from error
+            raise RuntimeError(f"Could not read {jsonl_path}: {error}") from error
 
         with handle:
             for line in handle:
@@ -335,26 +335,26 @@ def get_claude_observed_usage(claude_home: Path) -> tuple[int, int]:
 def get_codex_observed_usage(codex_home: Path) -> tuple[int, int, str]:
     session_index_path = codex_home / "session_index.jsonl"
     if not session_index_path.exists():
-        return (0, 0, "Sin session_index.jsonl")
+        return (0, 0, "No session_index.jsonl")
 
     try:
         with session_index_path.open("r", encoding="utf-8", errors="replace") as handle:
             message_count = sum(1 for line in handle if line.strip() != "")
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {session_index_path}: {error}") from error
+        raise RuntimeError(f"Could not read {session_index_path}: {error}") from error
 
-    return (0, message_count, "Índice local leído; uso porcentual manual")
+    return (0, message_count, "Local index read; manual usage percent")
 
 
-# Cantidad maxima de rollouts recientes que se inspeccionan buscando la cuota del modelo
-# principal. Si el rollout mas nuevo fue una sesion del modelo "spark" (cuota aparte), se
-# sigue retrocediendo hasta hallar una sesion del modelo principal.
+# Maximum number of recent rollouts inspected looking for the main model's quota. If the
+# newest rollout was a "spark" model session (separate quota), it keeps going back until it
+# finds a main model session.
 _CODEX_RATE_LIMIT_CANDIDATE_MAX = 24
 
 
 def _is_spark_model(model: str) -> bool:
-    # "spark" (gpt-5.x-codex-spark) consume un bucket de cuota separado del modelo
-    # principal de Codex; su porcentaje no debe contar para el medidor.
+    # "spark" (gpt-5.x-codex-spark) consumes a quota bucket separate from Codex's main
+    # model; its percentage must not count toward the meter.
     return "spark" in model.lower()
 
 
@@ -373,7 +373,7 @@ def _rollouts_by_mtime_desc(sessions_path: Path, limit: int) -> list[Path]:
 
 
 def _find_rate_limits(node: Any) -> dict[str, Any] | None:
-    # Busca recursivamente el bloque rate_limits dentro de un evento de rollout.
+    # Recursively searches for the rate_limits block inside a rollout event.
     if isinstance(node, dict):
         rate_limits = node.get("rate_limits")
         if isinstance(rate_limits, dict):
@@ -391,20 +391,20 @@ def _find_rate_limits(node: Any) -> dict[str, Any] | None:
 
 
 def _rollout_principal_rate_limits(rollout_path: Path) -> dict[str, Any] | None:
-    # Devuelve la ultima cuota del modelo PRINCIPAL en este rollout, ignorando los turnos
-    # del modelo "spark" (su % cuenta contra un bucket de cuota aparte).
+    # Returns the last MAIN model quota in this rollout, ignoring the "spark" model's turns
+    # (its % counts against a separate quota bucket).
     #
-    # Notas del formato del rollout:
-    #   - El modelo activo se declara en eventos turn_context (payload.model) y aplica a los
-    #     token_count (que cargan rate_limits) que vienen despues.
-    #   - Codex intercala dos tipos de rate_limits: las ventanas de uso reales (limit_id
-    #     "codex", con primary/secondary poblados) y las de creditos (limit_id "premium",
-    #     con primary/secondary en null). Se rastrean por separado el primary y el secondary
-    #     no nulos mas recientes para que un snapshot de creditos no pise la cuota real.
+    # Notes on the rollout format:
+    #   - The active model is declared in turn_context events (payload.model) and applies to the
+    #     token_count events (which carry rate_limits) that come after.
+    #   - Codex interleaves two kinds of rate_limits: the real usage windows (limit_id
+    #     "codex", with primary/secondary populated) and the credit ones (limit_id "premium",
+    #     with primary/secondary null). The most recent non-null primary and secondary are
+    #     tracked separately so a credit snapshot does not overwrite the real quota.
     try:
         handle = rollout_path.open("r", encoding="utf-8", errors="replace")
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {rollout_path}: {error}") from error
+        raise RuntimeError(f"Could not read {rollout_path}: {error}") from error
 
     current_model = ""
     latest_primary: dict[str, Any] | None = None
@@ -430,7 +430,7 @@ def _rollout_principal_rate_limits(rollout_path: Path) -> dict[str, Any] | None:
 
             if not has_rate_limits:
                 continue
-            # La cuota del modelo spark no debe contar; se conserva la del principal.
+            # The spark model's quota must not count; the main model's is kept.
             if _is_spark_model(current_model):
                 continue
             found = _find_rate_limits(event)
@@ -450,8 +450,8 @@ def _rollout_principal_rate_limits(rollout_path: Path) -> dict[str, Any] | None:
 
 
 def _newest_principal_rate_limits(sessions_path: Path) -> tuple[Path, dict[str, Any]] | None:
-    # Recorre los rollouts del mas nuevo al mas viejo y devuelve la primera cuota del modelo
-    # principal hallada. Si la ultima sesion fue de spark, retrocede hasta una principal.
+    # Walks the rollouts from newest to oldest and returns the first main model quota found.
+    # If the last session was spark, it goes back until a main one.
     for rollout_path in _rollouts_by_mtime_desc(sessions_path, _CODEX_RATE_LIMIT_CANDIDATE_MAX):
         rate_limits = _rollout_principal_rate_limits(rollout_path)
         if rate_limits is not None:
@@ -460,16 +460,16 @@ def _newest_principal_rate_limits(sessions_path: Path) -> tuple[Path, dict[str, 
     return None
 
 
-# Tope para sostener "busy" cuando hay task_started sin task_complete pero el
-# rollout dejó de escribirse. Cubre comandos/respuestas silenciosas sin dejar una
-# sesión abandonada como ocupada durante media hora.
+# Cap to sustain "busy" when there is a task_started without task_complete but the
+# rollout stopped being written. Covers silent commands/responses without leaving an
+# abandoned session as busy for half an hour.
 _CODEX_OPEN_TASK_BUSY_MAX_SECONDS = 300
-# Cantidad maxima de rollouts recientes que se inspeccionan para actividad. Permite
-# detectar una sesion de trabajo abierta aunque otra conversacion escriba despues.
+# Maximum number of recent rollouts inspected for activity. Allows detecting an open work
+# session even if another conversation writes afterward.
 _CODEX_ACTIVITY_CANDIDATE_MAX = 12
-# Solo se lee la cola del rollout para inferir actividad: los marcadores de turno recientes
-# caben de sobra y evita leer megabytes en cada sondeo. Mas amplio que el de Claude porque las
-# lineas de Codex (con salidas de herramientas embebidas) pueden ser grandes.
+# Only the rollout tail is read to infer activity: the recent turn markers fit well within it
+# and it avoids reading megabytes on every sample. Wider than Claude's because Codex lines
+# (with embedded tool outputs) can be large.
 _CODEX_ROLLOUT_TAIL_BYTES = 65536
 
 
@@ -481,8 +481,8 @@ class CodexRolloutActivity(TypedDict):
 
 
 def _recent_rollouts(sessions_path: Path, current_ms: int, max_age_ms: int) -> list[Path]:
-    # Selecciona por mtime reciente, pero no asume que el rollout mas nuevo sea el
-    # unico activo: puede haber sesiones largas abiertas en paralelo.
+    # Selects by recent mtime, but does not assume the newest rollout is the only active one:
+    # there may be long sessions open in parallel.
     candidates: list[tuple[float, Path]] = []
     for candidate in sessions_path.rglob("*.jsonl"):
         try:
@@ -500,15 +500,15 @@ def _recent_rollouts(sessions_path: Path, current_ms: int, max_age_ms: int) -> l
 
 
 def _read_rollout_activity(path: Path) -> CodexRolloutActivity:
-    # Lee eventos reales del JSONL; no busca strings crudos en salidas de herramientas.
-    # Esto evita falsos positivos cuando un output contiene texto como "task_complete".
+    # Reads real JSONL events; does not search for raw strings in tool outputs. This avoids
+    # false positives when an output contains text like "task_complete".
     #
-    # Solo se lee la COLA del rollout: los marcadores de turno relevantes
-    # (task_started/complete, request_user_input, agent_message) estan al final, y leer
-    # archivos completos en cada sondeo era el mayor costo de IO. Caveat: si un turno en curso
-    # produce una salida enorme que empuja su task_started fuera de la cola, el conteo de
-    # sesiones puede quedarse corto para esa sesion, pero la actividad sigue bien (cae al
-    # respaldo "sin marcadores en sesion reciente => busy").
+    # Only the TAIL of the rollout is read: the relevant turn markers
+    # (task_started/complete, request_user_input, agent_message) are at the end, and reading
+    # whole files on every sample was the biggest IO cost. Caveat: if an in-progress turn
+    # produces a huge output that pushes its task_started out of the tail, the session count
+    # may fall short for that session, but activity is still fine (it falls back to
+    # "no markers in a recent session => busy").
     last_started = -1
     last_complete = -1
     last_ask = -1
@@ -520,11 +520,11 @@ def _read_rollout_activity(path: Path) -> CodexRolloutActivity:
             file_size = path.stat().st_size
             if file_size > _CODEX_ROLLOUT_TAIL_BYTES:
                 handle.seek(file_size - _CODEX_ROLLOUT_TAIL_BYTES)
-                # La primera linea tras el salto suele quedar partida; se descarta.
+                # The first line after the seek is usually cut off; it is discarded.
                 handle.readline()
             raw = handle.read()
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {path}: {error}") from error
+        raise RuntimeError(f"Could not read {path}: {error}") from error
 
     index = 0
     for raw_line in raw.split(b"\n"):
@@ -558,12 +558,12 @@ def _read_rollout_activity(path: Path) -> CodexRolloutActivity:
 
     has_turn_marker = last_started != -1 or last_complete != -1
     open_task = last_started > last_complete
-    # Si la cola no alcanzo a incluir NINGUN marcador de turno, no es idle: es una tarea larga
-    # en curso cuyo task_started quedo por encima de la cola (una peticion del usuario enmarca
-    # decenas de tool calls con salidas grandes). Sin este respaldo, una sesion trabajando se
-    # leia como idle porque solo la salvaba la ventana corta de "sin marcadores". Una sesion
-    # terminada conserva su task_complete al final del archivo, dentro de la cola, asi que este
-    # barrido completo solo se paga en el caso ambiguo.
+    # If the tail did not manage to include ANY turn marker, it is not idle: it is a long task
+    # in progress whose task_started ended up above the tail (one user request frames dozens of
+    # tool calls with large outputs). Without this fallback, a working session was read as idle
+    # because only the short "no markers" window saved it. A finished session keeps its
+    # task_complete at the end of the file, within the tail, so this full sweep is only paid in
+    # the ambiguous case.
     if not has_turn_marker:
         has_turn_marker, open_task = _scan_full_task_state(path)
 
@@ -576,11 +576,11 @@ def _read_rollout_activity(path: Path) -> CodexRolloutActivity:
 
 
 def _scan_full_task_state(path: Path) -> tuple[bool, bool]:
-    # Devuelve (has_turn_marker, open_task) recorriendo TODO el rollout, pero json-parseando
-    # solo las lineas que contienen los tokens de marcador (prefiltro por substring): el costo
-    # es leer el archivo sin deserializar las salidas de herramienta voluminosas. Se usa como
-    # respaldo cuando la cola de _CODEX_ROLLOUT_TAIL_BYTES no incluyo ningun task_started/
-    # task_complete. open_task es True si el ultimo marcador del archivo fue un task_started.
+    # Returns (has_turn_marker, open_task) walking the WHOLE rollout, but json-parsing only the
+    # lines that contain the marker tokens (substring prefilter): the cost is reading the file
+    # without deserializing the bulky tool outputs. Used as a fallback when the
+    # _CODEX_ROLLOUT_TAIL_BYTES tail did not include any task_started/task_complete. open_task is
+    # True if the last marker in the file was a task_started.
     last_marker = ""
     try:
         with path.open("rb") as handle:
@@ -602,22 +602,22 @@ def _scan_full_task_state(path: Path) -> tuple[bool, bool]:
                 elif payload_type == "task_complete":
                     last_marker = "complete"
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {path}: {error}") from error
+        raise RuntimeError(f"Could not read {path}: {error}") from error
 
     return (last_marker != "", last_marker == "started")
 
 
-# El session_meta es siempre la PRIMERA linea del rollout y es inmutable tras crearse el
-# archivo: identifica el rollout como sesion de usuario o como subagente (thread_source
-# "subagent" + parent_thread_id). Se cachea de forma permanente por ruta porque nunca cambia;
-# el universo de rutas esta acotado por la cantidad de rollouts del directorio sessions/.
+# The session_meta is always the FIRST line of the rollout and is immutable once the file is
+# created: it identifies the rollout as a user session or as a subagent (thread_source
+# "subagent" + parent_thread_id). It is cached permanently by path because it never changes;
+# the universe of paths is bounded by the number of rollouts in the sessions/ directory.
 _codex_meta_cache_lock = threading.Lock()
 _codex_meta_cache: dict[str, str] = {}
 
 
 def _read_rollout_thread_source(path: Path) -> str:
-    # Devuelve el thread_source del session_meta ("user", "subagent", ...) o "" si no se
-    # puede determinar. Lee solo la primera linea; el resultado se cachea para siempre.
+    # Returns the thread_source of the session_meta ("user", "subagent", ...) or "" if it
+    # cannot be determined. Reads only the first line; the result is cached forever.
     cache_key = str(path)
     with _codex_meta_cache_lock:
         cached = _codex_meta_cache.get(cache_key)
@@ -635,7 +635,7 @@ def _parse_rollout_thread_source(path: Path) -> str:
         with path.open("rb") as handle:
             first_line = handle.readline()
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer {path}: {error}") from error
+        raise RuntimeError(f"Could not read {path}: {error}") from error
 
     try:
         event = json.loads(first_line)
@@ -653,19 +653,19 @@ def _parse_rollout_thread_source(path: Path) -> str:
 
 
 def _looks_like_question(text: str) -> bool:
-    # Señal de alta precisión: el mensaje (sin espacios ni énfasis Markdown al final)
-    # termina en "?" — cubre tanto "...?" como "¿...?".
+    # High-precision signal: the message (without trailing spaces or Markdown emphasis)
+    # ends in "?" - covers both "...?" and "..?".
     stripped = text.rstrip()
     while stripped != "" and stripped[-1] in "*_`> ":
         stripped = stripped[:-1].rstrip()
     return stripped.endswith("?")
 
 
-# Cache breve del estado+conteo de Codex. El long-poll lo consulta ~4 veces/seg y recorrer los
-# rollouts (rglob + leer archivos) en cada sondeo era el mayor consumo de IO del servicio. Con
-# este TTL se calcula a lo sumo una vez por intervalo; la reaccion del ESP a cambios de Codex
-# queda acotada al TTL (~1s, imperceptible). El estado y el conteo salen del MISMO recorrido,
-# asi que pedir ambos en el mismo poll no duplica el escaneo.
+# Short cache of Codex's state+count. The long-poll queries it ~4 times/sec and walking the
+# rollouts (rglob + reading files) on every sample was the service's biggest IO consumer. With
+# this TTL it is computed at most once per interval; the ESP's reaction to Codex changes is
+# bounded by the TTL (~1s, imperceptible). The state and the count come from the SAME walk, so
+# asking for both in the same poll does not duplicate the scan.
 _CODEX_ACTIVITY_TTL_MS = 1000
 _codex_state_cache_lock = threading.Lock()
 _codex_state_last_ms = 0
@@ -676,11 +676,11 @@ _codex_state_last: tuple[str, int] | None = None
 def _compute_codex_activity_count(
     codex_home: Path, current_ms: int, busy_window_seconds: int, stale_seconds: int, include_subagents: bool
 ) -> tuple[str, int]:
-    # Una sola pasada por los rollouts recientes que deriva A LA VEZ el estado de actividad y el
-    # numero de sesiones de Codex con turno abierto. Codex enmarca cada turno con
-    # task_started ... task_complete y no tiene un evento de "esperando" explicito; se infiere
-    # del ultimo marcador: turno abierto => "busy" (hasta el tope de tarea abierta); sin
-    # marcadores en una sesion reciente => "busy" solo dentro de la ventana corta.
+    # A single pass over the recent rollouts that derives AT ONCE the activity state and the
+    # number of Codex sessions with an open turn. Codex frames each turn with
+    # task_started ... task_complete and has no explicit "waiting" event; it is inferred from
+    # the last marker: open turn => "busy" (up to the open-task cap); no markers in a recent
+    # session => "busy" only within the short window.
     sessions_path = codex_home / "sessions"
     if not sessions_path.exists():
         return ("idle", 0)
@@ -695,29 +695,29 @@ def _compute_codex_activity_count(
 
     rollout_states: list[tuple[int, CodexRolloutActivity]] = []
     for rollout_path in rollout_paths:
-        # Con include_subagents apagado se descartan los rollouts hijos (subagentes) para
-        # que no empujen actividad ni conteo. El short-circuit evita leer la cabecera en el
-        # camino por defecto (incluir), preservando el costo de IO del long-poll.
+        # With include_subagents off, child rollouts (subagents) are discarded so they do not
+        # push activity or count. The short-circuit avoids reading the header on the default
+        # path (include), preserving the long-poll's IO cost.
         if not include_subagents and _read_rollout_thread_source(rollout_path) == "subagent":
             continue
         age_ms = current_ms - int(rollout_path.stat().st_mtime * 1000)
         rollout_states.append((age_ms, _read_rollout_activity(rollout_path)))
 
-    # Conteo: rollouts con turno abierto dentro de la ventana = sesiones de Codex trabajando.
+    # Count: rollouts with an open turn within the window = Codex sessions working.
     busy_count = sum(
         1 for age_ms, state in rollout_states if state["open_task"] and age_ms <= open_task_busy_ms
     )
 
-    # Pregunta pendiente: request_user_input sin respuesta posterior -> Codex espera al usuario.
+    # Pending question: request_user_input with no later answer -> Codex waits on the user.
     if any(state["pending_user_input"] and age_ms <= stale_ms for age_ms, state in rollout_states):
         return ("waiting", busy_count)
-    # Turno explicitamente abierto: no debe parpadear a idle mientras el modelo razona.
+    # Explicitly open turn: it must not flicker to idle while the model reasons.
     if any(state["open_task"] and age_ms <= open_task_busy_ms for age_ms, state in rollout_states):
         return ("busy", busy_count)
-    # Respaldo para preguntas en prosa (el ultimo mensaje del agente termina en "?").
+    # Fallback for prose questions (the agent's last message ends in "?").
     if any(age_ms <= stale_ms and _looks_like_question(state["last_agent_message"]) for age_ms, state in rollout_states):
         return ("waiting", busy_count)
-    # Sin marcadores en una sesion reciente: evidencia debil, solo dentro de la ventana corta.
+    # No markers in a recent session: weak evidence, only within the short window.
     if any(not state["has_turn_marker"] and age_ms <= busy_ms for age_ms, state in rollout_states):
         return ("busy", busy_count)
 
@@ -727,9 +727,9 @@ def _compute_codex_activity_count(
 def read_codex_activity_count(
     codex_home: Path, current_ms: int, busy_window_seconds: int, stale_seconds: int, include_subagents: bool
 ) -> tuple[str, int]:
-    # Devuelve (actividad, conteo) cacheado durante _CODEX_ACTIVITY_TTL_MS para no recorrer los
-    # rollouts en cada sondeo. Se reevalua si cambian las ventanas o el flag de subagentes
-    # (config) o caduca el TTL.
+    # Returns (activity, count) cached for _CODEX_ACTIVITY_TTL_MS to avoid walking the rollouts
+    # on every sample. It is re-evaluated if the windows or the subagents flag (config) change
+    # or the TTL expires.
     global _codex_state_last_ms, _codex_state_last_key, _codex_state_last
     key = (busy_window_seconds, stale_seconds, include_subagents)
     with _codex_state_cache_lock:
@@ -799,21 +799,21 @@ def _empty_codex_window(current_ms: int, window_minutes: int) -> UsageWindowConf
 
 
 def read_codex_rate_limits_reading_uncached(codex_home: Path, current_ms: int) -> ToolUsageReading:
-    # Lee la última cuota del modelo PRINCIPAL que Codex persistió en sus rollouts (se
-    # ignora el modelo "spark", que usa un bucket de cuota aparte). Es pasivo y gratis:
-    # refleja la cuota real a la última vez que se usó el modelo principal.
+    # Reads the last MAIN model quota that Codex persisted in its rollouts (the "spark" model,
+    # which uses a separate quota bucket, is ignored). It is passive and free: it reflects the
+    # real quota as of the last time the main model was used.
     failure_current = _empty_codex_window(current_ms, CODEX_PRIMARY_MINUTES)
     failure_weekly = _empty_codex_window(current_ms, CODEX_SECONDARY_MINUTES)
 
     sessions_path = codex_home / "sessions"
     if not sessions_path.exists():
-        detail = "No existe sessions/ en CODEX_HOME"
+        detail = "No sessions/ found in CODEX_HOME"
         log_event("codex_usage_unavailable", detail=detail)
         return {"ok": False, "source": "codex-rollout-unavailable", "detail": detail, "observed_at_ms": 0, "current": failure_current, "weekly": failure_weekly}
 
     principal = _newest_principal_rate_limits(sessions_path)
     if principal is None:
-        detail = "Sin rate_limits del modelo principal en rollouts de Codex"
+        detail = "No main model rate_limits in Codex rollouts"
         log_event("codex_usage_unavailable", detail=detail)
         return {"ok": False, "source": "codex-rollout-unavailable", "detail": detail, "observed_at_ms": 0, "current": failure_current, "weekly": failure_weekly}
 
@@ -821,7 +821,7 @@ def read_codex_rate_limits_reading_uncached(codex_home: Path, current_ms: int) -
     return {
         "ok": True,
         "source": "codex-rollout-snapshot",
-        "detail": f"Snapshot de cuota (principal) desde {rollout_path.name}",
+        "detail": f"Quota snapshot (main) from {rollout_path.name}",
         "observed_at_ms": int(rollout_path.stat().st_mtime * 1000),
         "current": _window_from_codex(rate_limits.get("primary"), CODEX_PRIMARY_MINUTES, current_ms),
         "weekly": _window_from_codex(rate_limits.get("secondary"), CODEX_SECONDARY_MINUTES, current_ms),
@@ -829,7 +829,7 @@ def read_codex_rate_limits_reading_uncached(codex_home: Path, current_ms: int) -
 
 
 def read_codex_rate_limits_reading(codex_home: Path, current_ms: int, ttl_seconds: int) -> ToolUsageReading:
-    # Throttle configurable para no recorrer sessions/** en cada render de la web o del ESP32.
+    # Configurable throttle to avoid walking sessions/** on every render of the web or the ESP32.
     global _codex_last_attempt_ms, _codex_last_reading
 
     ttl_ms = ttl_seconds * 1000

@@ -2,8 +2,8 @@ from typing import Literal, TypedDict
 
 ToolId = Literal["claude", "codex"]
 Pace = Literal["under", "on_track", "over", "unknown"]
-# Estado de actividad de una herramienta en el instante de la lectura:
-# idle = sin actividad, busy = pensando/ejecutando ahora, waiting = espera al usuario.
+# Activity state of a tool at the instant of the reading:
+# idle = no activity, busy = thinking/executing now, waiting = waiting on the user.
 Activity = Literal["idle", "busy", "waiting"]
 
 
@@ -24,14 +24,14 @@ class UsageWindowConfig(TypedDict):
 
 
 class ToolUsageReading(TypedDict):
-    # Resultado de una fuente de cuota real (OAuth de Claude o snapshot de Codex).
-    # ok=False indica que se debe degradar a la configuración manual de forma visible.
+    # Result of a real quota source (Claude OAuth or Codex snapshot).
+    # ok=False indicates it must visibly degrade to the manual configuration.
     ok: bool
     source: str
     detail: str
-    # Momento en que se obtuvo la información de cuota (epoch ms): para Claude es el
-    # último fetch OAuth exitoso/persistido; para Codex el mtime del rollout leído.
-    # 0 indica que no hay una lectura real con fecha conocida.
+    # Moment the quota information was obtained (epoch ms): for Claude it is the
+    # last successful/persisted OAuth fetch; for Codex the mtime of the read rollout.
+    # 0 indicates there is no real reading with a known date.
     observed_at_ms: int
     current: UsageWindowConfig
     weekly: UsageWindowConfig
@@ -58,31 +58,31 @@ class ToolSnapshot(TypedDict):
     observed_tokens: int
     observed_messages: int
     source: str
-    # Fecha (epoch ms) de la última información de cuota obtenida; 0 si se desconoce.
+    # Date (epoch ms) of the last quota information obtained; 0 if unknown.
     usage_observed_at_ms: int
-    # Estado de actividad en vivo (idle/busy/waiting) que el firmware usa para
-    # animar la esquina y para invertir la pantalla cuando hay espera.
+    # Live activity state (idle/busy/waiting) that the firmware uses to
+    # animate the corner and to invert the screen when there is a wait.
     activity: Activity
 
 
 class ActivityAnimationConfig(TypedDict):
-    # Animación que el ESP32 almacena y renderiza en la esquina superior derecha.
-    # El estilo se traduce a una secuencia de frames servida en /api/esp/activity-animation.
+    # Animation that the ESP32 stores and renders in the top-right corner.
+    # The style is translated into a frame sequence served at /api/esp/activity-animation.
     style: str
     interval_ms: int
     invert_on_waiting: bool
     invert_blink_ms: int
-    # Tamaño del recuadro de la animación en la esquina superior derecha (px). Permite
-    # ajustar dinámicamente cuánto ocupa la animación para que quepa mejor según el tema.
+    # Size of the animation box in the top-right corner (px). Allows
+    # dynamically adjusting how much the animation takes up so it fits better per theme.
     frame_width: int
     frame_height: int
-    # Ventana (s) para considerar a Codex "ocupado" según la frescura de su rollout.
+    # Window (s) to consider Codex "busy" based on the freshness of its rollout.
     codex_busy_window_seconds: int
-    # Antigüedad (s) tras la cual un estado busy/waiting se considera obsoleto -> idle.
+    # Age (s) after which a busy/waiting state is considered stale -> idle.
     stale_seconds: int
-    # Si los subagentes en background cuentan para la actividad y el conteo de sesiones que
-    # alimentan la animación. Codex: rollouts hijos (session_meta thread_source "subagent").
-    # Claude: subagentes/workflows del transcript. Por defecto Codex los incluye y Claude no.
+    # Whether background subagents count toward activity and the session count that
+    # feed the animation. Codex: child rollouts (session_meta thread_source "subagent").
+    # Claude: subagents/workflows of the transcript. By default Codex includes them and Claude does not.
     include_codex_subagents: bool
     include_claude_subagents: bool
 
@@ -94,10 +94,10 @@ class ServiceConfig(TypedDict):
     claude_usage_ttl_seconds: int
     codex_usage_ttl_seconds: int
     activity_animation: ActivityAnimationConfig
-    # Salvapantallas que el ESP renderiza cuando el servicio esta caido (anti burn-in).
+    # Screensaver that the ESP renders when the service is down (anti burn-in).
     screensaver: str
-    # Atenuado anti burn-in: tras dim_after_seconds sin cambios en las barras, el ESP
-    # baja el brillo a dim_brightness_percent. dim_after_seconds=0 desactiva el atenuado.
+    # Anti burn-in dimming: after dim_after_seconds without changes in the bars, the ESP
+    # lowers the brightness to dim_brightness_percent. dim_after_seconds=0 disables dimming.
     dim_after_seconds: int
     dim_brightness_percent: int
     claude: ToolConfig

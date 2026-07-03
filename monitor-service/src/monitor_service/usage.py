@@ -24,23 +24,23 @@ from monitor_service.types import (
 )
 
 
-# Ultima firma de espera logueada por herramienta, para emitir solo en transiciones.
+# Last waiting signature logged per tool, to emit only on transitions.
 _last_waiting_signature: dict[str, tuple[str, bool, str]] = {}
 
-# Gracia (s) para sostener "busy" tras el ultimo busy real de Claude. Claude Code oscila su
-# status busy/idle entre dos tool_use del mismo turno; sin este linger la animacion del ESP
-# parpadearia entre trabajando e idle. Es el analogo al sostenimiento de turno abierto que
-# Codex ya tiene (_CODEX_OPEN_TASK_BUSY_MAX_SECONDS en collectors.py). El blip entre tools es
-# sub-segundo, asi que 1s basta para taparlo y el idle real aparece casi al instante.
+# Grace period (s) to hold "busy" after Claude's last real busy. Claude Code oscillates its
+# busy/idle status between two tool_use in the same turn; without this linger the ESP animation
+# would flicker between working and idle. It is the analog of the open-turn hold that
+# Codex already has (_CODEX_OPEN_TASK_BUSY_MAX_SECONDS in collectors.py). The blip between tools
+# is sub-second, so 1s is enough to cover it and the real idle shows up almost instantly.
 _CLAUDE_BUSY_LINGER_SECONDS = 1
-# Ultimo instante (epoch ms) en que se observo "busy" por herramienta, base del debounce.
+# Last instant (epoch ms) at which "busy" was observed per tool, base of the debounce.
 _last_busy_ms: dict[str, int] = {}
 
 
 def linger_busy(tool: str, raw_busy: bool, current_ms: int, linger_seconds: int) -> bool:
-    # Debounce de busy->idle: cada busy real refresca la marca y devuelve True; cuando el
-    # status cae a idle se sigue reportando busy hasta que el idle persista mas que la
-    # gracia, absorbiendo el parpadeo momentaneo entre tool_use de un mismo turno.
+    # Debounce of busy->idle: each real busy refreshes the mark and returns True; when the
+    # status drops to idle it keeps reporting busy until the idle persists longer than the
+    # grace period, absorbing the momentary flicker between tool_use of the same turn.
     if raw_busy:
         _last_busy_ms[tool] = current_ms
         return True
@@ -53,7 +53,7 @@ def linger_busy(tool: str, raw_busy: bool, current_ms: int, linger_seconds: int)
 
 
 def resolve_activity(waiting_for_user: bool, busy: bool) -> Activity:
-    # La espera al usuario manda sobre el "ocupado" para que la pantalla avise primero.
+    # Waiting on the user takes precedence over "busy" so the screen warns first.
     if waiting_for_user:
         return "waiting"
     if busy:
@@ -62,8 +62,8 @@ def resolve_activity(waiting_for_user: bool, busy: bool) -> Activity:
 
 
 def _log_waiting_transition(tool: str, waiting: bool, reason: str, detail: str) -> None:
-    # Edge-triggered: el long-poll evalua la actividad ~4 veces/seg; loguear cada llamada
-    # inundaria. Solo se emite cuando cambia el booleano de espera o su motivo.
+    # Edge-triggered: the long-poll evaluates activity ~4 times/sec; logging every call
+    # would flood. It is only emitted when the waiting boolean or its reason changes.
     global _last_waiting_signature
     signature = (tool, waiting, reason)
     if _last_waiting_signature.get(tool) == signature:
@@ -78,18 +78,18 @@ def _log_waiting_transition(tool: str, waiting: bool, reason: str, detail: str) 
 
 
 def resolve_claude_waiting(config: ServiceConfig, claude_home: Path, current_ms: int) -> tuple[bool, str]:
-    # Un solo lugar decide si Claude espera al usuario, en este orden de prioridad:
-    #   1) override manual de la config,
-    #   2) estado "waiting"/waitingFor en sessions/*.json: esta version de Claude expone aqui
-    #      la pregunta real (AskUserQuestion -> waitingFor "permission prompt"/"dialog open"),
-    #   3) pregunta estructurada en la cola del transcript, como respaldo.
-    # La senal es directa (sin debounce): `get_claude_waiting_status` ya es estable porque mira
-    # CUALQUIER sesion fresca (no la "mas reciente", que oscilaba) y la ventana de frescura es
-    # amplia (1800s). Un debounce introducia un retardo durante el cual el frame cacheado y el
-    # long-poll discrepaban -> el ESP parpadeaba; por eso se eliminó.
+    # A single place decides whether Claude is waiting on the user, in this priority order:
+    #   1) manual override from the config,
+    #   2) "waiting"/waitingFor status in sessions/*.json: this version of Claude exposes here
+    #      the real question (AskUserQuestion -> waitingFor "permission prompt"/"dialog open"),
+    #   3) structured question in the transcript queue, as a fallback.
+    # The signal is direct (no debounce): `get_claude_waiting_status` is already stable because it
+    # looks at ANY fresh session (not the "most recent", which oscillated) and the freshness window
+    # is wide (1800s). A debounce introduced a delay during which the cached frame and the
+    # long-poll disagreed -> the ESP flickered; that is why it was removed.
     if config["claude"]["waiting_for_user"]:
         configured = config["claude"]["status_text"]
-        text = configured if configured != "" else "Esperando tu respuesta"
+        text = configured if configured != "" else "Waiting for your reply"
         _log_waiting_transition("claude", True, "config_override", text)
         return (True, text)
 
@@ -109,8 +109,8 @@ def resolve_claude_waiting(config: ServiceConfig, claude_home: Path, current_ms:
 
 
 def resolve_codex_activity(config: ServiceConfig, codex_home: Path, current_ms: int) -> Activity:
-    # El override manual de la config fuerza "waiting"; si no, se infiere del rollout
-    # (turno en curso => busy, turno recién terminado => waiting).
+    # The manual config override forces "waiting"; otherwise it is inferred from the rollout
+    # (turn in progress => busy, turn just finished => waiting).
     if config["codex"]["waiting_for_user"]:
         _log_waiting_transition("codex", True, "config_override", "")
         return "waiting"
@@ -130,7 +130,7 @@ def resolve_codex_activity(config: ServiceConfig, codex_home: Path, current_ms: 
 
 
 def apply_usage_reading(tool_config: ToolConfig, reading: ToolUsageReading) -> ToolConfig:
-    # Reemplaza las ventanas manuales por la cuota real cuando la lectura es válida.
+    # Replaces the manual windows with the real quota when the reading is valid.
     if not reading["ok"]:
         return tool_config
 
@@ -215,16 +215,16 @@ def build_tool_snapshot(
 
 
 def project_window_reset(window_config: UsageWindowConfig, current_ms: int) -> UsageWindowConfig:
-    # La cuota de Codex se lee de forma pasiva: queda congelada en el snapshot de la ultima
-    # request. Cuando el reloj supera window_reset_ms la ventana ya rodo y el bucket vuelve a
-    # 100%, pero no habria una lectura nueva que lo refleje: al llegar a 0% no se pueden enviar
-    # mensajes, asi que nunca se generaria un rollout con el reinicio.
+    # The Codex quota is read passively: it stays frozen in the snapshot of the last
+    # request. When the clock passes window_reset_ms the window has already rolled and the bucket
+    # returns to 100%, but there would be no new reading to reflect it: at 0% no messages can be
+    # sent, so a rollout with the reset would never be generated.
     #
-    # La ventana de Codex no esta anclada a un reloj absoluto: el contador arranca con el
-    # PRIMER mensaje de la nueva ventana y vence window_length despues. Mientras no haya
-    # mensajes la ventana no ha empezado, asi que se muestra fresca desde el ahora (restante
-    # 100% y "se reinicia en 5h" de forma constante) hasta que un rollout real traiga el
-    # resets_at verdadero del primer mensaje.
+    # The Codex window is not anchored to an absolute clock: the counter starts with the
+    # FIRST message of the new window and expires window_length later. As long as there are no
+    # messages the window has not started, so it is shown fresh from now (100% remaining
+    # and "resets in 5h" constantly) until a real rollout brings the true
+    # resets_at of the first message.
     window_length_ms = window_config["window_reset_ms"] - window_config["window_start_ms"]
     if window_length_ms <= 0 or current_ms < window_config["window_reset_ms"]:
         return window_config
@@ -292,7 +292,7 @@ def build_codex_snapshot(config: ServiceConfig, codex_home: Path, current_ms: in
     reading = read_codex_rate_limits_reading(codex_home, current_ms, config["codex_usage_ttl_seconds"])
     effective_config = apply_usage_reading(tool_config, reading)
     configured_status = tool_config["status_text"]
-    fallback_status = source_status if configured_status == "" or configured_status == "Sin datos recientes" else configured_status
+    fallback_status = source_status if configured_status == "" or configured_status == "No recent data" else configured_status
     codex_activity = resolve_codex_activity(config, codex_home, current_ms)
     status_text = resolve_status_text(codex_activity == "waiting", fallback_status, reading, fallback_status)
 
@@ -324,10 +324,10 @@ def build_snapshot(config: ServiceConfig, claude_home: Path, codex_home: Path) -
 def compute_activity_states(
     config: ServiceConfig, claude_home: Path, codex_home: Path, current_ms: int
 ) -> tuple[Activity, Activity]:
-    # Solo el estado de actividad (idle/busy/waiting), que es barato: lee los
-    # sessions/*.json de Claude y el tail del rollout de Codex, sin escanear los
-    # transcripts JSONL pesados del snapshot. Es lo que alimenta el canal de
-    # long-poll con el que el ESP reacciona casi al instante.
+    # Only the activity state (idle/busy/waiting), which is cheap: it reads Claude's
+    # sessions/*.json and the tail of Codex's rollout, without scanning the heavy
+    # JSONL transcripts of the snapshot. It is what feeds the long-poll channel
+    # through which the ESP reacts almost instantly.
     anim_config = config["activity_animation"]
     raw_claude_busy = get_claude_busy(
         claude_home, current_ms, anim_config["stale_seconds"], anim_config["include_claude_subagents"]

@@ -7,26 +7,26 @@ from typing import Any, cast
 
 from monitor_service.types import ActivityAnimationConfig, ServiceConfig, ToolConfig, ToolId, UsageWindowConfig
 
-# Estilos de animación válidos para la esquina de actividad (deben existir en activity_animation.py).
+# Valid animation styles for the activity corner (must exist in activity_animation.py).
 ACTIVITY_ANIMATION_STYLES = ("spinner", "dots", "dots-right", "stars-right", "pulse", "bars", "ball", "wave", "worm")
 
-# Límites del recuadro de la animación de actividad (px). El máximo coincide con el
-# tope que valida el firmware (ANIM_FRAME_MAX_* en main.cpp) y con el lienzo OLED.
+# Bounds of the activity animation frame (px). The maximum matches the
+# cap the firmware validates (ANIM_FRAME_MAX_* in main.cpp) and the OLED canvas.
 ANIM_FRAME_DEFAULT_WIDTH = 48
 ANIM_FRAME_DEFAULT_HEIGHT = 5
 ANIM_FRAME_MIN_WIDTH = 8
 ANIM_FRAME_MIN_HEIGHT = 1
 ANIM_FRAME_MAX_WIDTH = 128
-# Tope de alto coherente con el buffer del firmware: el peor caso (128x16 x 32 frames)
-# son 8192 bytes, justo lo que reserva ANIM_MAX_BYTES en main.cpp.
+# Height cap consistent with the firmware buffer: the worst case (128x16 x 32 frames)
+# is 8192 bytes, exactly what ANIM_MAX_BYTES reserves in main.cpp.
 ANIM_FRAME_MAX_HEIGHT = 16
 
-# Temas de pantalla válidos (deben existir en renderer.THEME_DEFINITIONS / _THEMES).
+# Valid display themes (must exist in renderer.THEME_DEFINITIONS / _THEMES).
 THEMES = ("delta",)
 DEFAULT_THEME = "delta"
 
-# Salvapantallas válidos (anti burn-in cuando el servicio está caído). El ESP los
-# renderiza localmente; deben coincidir con los del firmware y los previews.
+# Valid screensavers (anti burn-in when the service is down). The ESP renders them
+# locally; they must match those in the firmware and the previews.
 SCREENSAVERS = ("black", "snake", "pipes", "matrix", "dvd", "maze", "flower")
 DEFAULT_SCREENSAVER = "dvd"
 
@@ -43,7 +43,7 @@ def get_int_env(name: str, fallback: int) -> int:
     try:
         return int(raw)
     except ValueError as error:
-        raise RuntimeError(f"{name} debe ser un entero, se recibió {raw!r}") from error
+        raise RuntimeError(f"{name} must be an integer, got {raw!r}") from error
 
 
 def build_usage_window_config(start_ms: int, reset_ms: int, remaining_percent: float) -> UsageWindowConfig:
@@ -61,7 +61,7 @@ def build_default_tool_config(label: str, start_ms: int, current_reset_ms: int, 
         "current": build_usage_window_config(start_ms, current_reset_ms, 100.0),
         "weekly": build_usage_window_config(start_ms, weekly_reset_ms, 100.0),
         "waiting_for_user": False,
-        "status_text": "Sin datos recientes",
+        "status_text": "No recent data",
         "manual_override": True,
     }
 
@@ -90,7 +90,7 @@ def build_default_config() -> ServiceConfig:
         "tolerance_percent": 5.0,
         "theme": DEFAULT_THEME,
         "frame_cache_ttl_seconds": get_int_env("FRAME_CACHE_TTL_SECONDS", 5),
-        # El .env CLAUDE_USAGE_TTL_SECONDS provee el default; luego se edita en la web.
+        # The .env CLAUDE_USAGE_TTL_SECONDS provides the default; it is then edited in the web UI.
         "claude_usage_ttl_seconds": get_int_env("CLAUDE_USAGE_TTL_SECONDS", 300),
         "codex_usage_ttl_seconds": get_int_env("CODEX_USAGE_TTL_SECONDS", 30),
         "activity_animation": build_default_activity_animation_config(),
@@ -105,7 +105,7 @@ def build_default_config() -> ServiceConfig:
 def get_config_path() -> Path:
     raw_path = os.environ.get("CONFIG_PATH")
     if raw_path is None or raw_path == "":
-        raise RuntimeError("CONFIG_PATH no está configurado")
+        raise RuntimeError("CONFIG_PATH is not configured")
 
     return Path(raw_path)
 
@@ -113,7 +113,7 @@ def get_config_path() -> Path:
 def get_readonly_home(env_name: str) -> Path:
     raw_path = os.environ.get(env_name)
     if raw_path is None or raw_path == "":
-        raise RuntimeError(f"{env_name} no está configurado")
+        raise RuntimeError(f"{env_name} is not configured")
 
     return Path(raw_path)
 
@@ -227,12 +227,12 @@ def load_config() -> ServiceConfig:
     try:
         raw_config = json.loads(config_path.read_text(encoding="utf-8"))
     except JSONDecodeError as error:
-        raise RuntimeError(f"Config JSON inválido en {config_path}: {error}") from error
+        raise RuntimeError(f"Invalid config JSON in {config_path}: {error}") from error
     except OSError as error:
-        raise RuntimeError(f"No se pudo leer la configuración en {config_path}: {error}") from error
+        raise RuntimeError(f"Could not read the configuration at {config_path}: {error}") from error
 
     if not isinstance(raw_config, dict):
-        raise RuntimeError(f"La configuración en {config_path} debe ser un objeto JSON")
+        raise RuntimeError(f"The configuration at {config_path} must be a JSON object")
 
     return normalize_config(cast(dict[str, Any], raw_config))
 
@@ -244,7 +244,7 @@ def save_config(config: ServiceConfig) -> None:
     try:
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as error:
-        raise RuntimeError(f"No se pudo guardar la configuración en {config_path}: {error}") from error
+        raise RuntimeError(f"Could not save the configuration at {config_path}: {error}") from error
 
 
 def update_tool_config(config: ServiceConfig, tool_id: ToolId, tool_config: ToolConfig) -> ServiceConfig:

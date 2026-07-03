@@ -1,18 +1,18 @@
-# Credenciales locales (WiFi, OTA): NUNCA versionar. Ver los *.example.*
+# Local credentials (WiFi, OTA): NEVER version. See the *.example.* files
 secrets.h
 platformio_override.ini
 
-# Artefactos de compilacion PlatformIO (esp32/.pio)
+# PlatformIO build artifacts (esp32/.pio)
 .pio/
 
-# Toolchain y entorno local de PlatformIO (esp32/.venv, esp32/.platformio-core)
+# Local PlatformIO toolchain and environment (esp32/.venv, esp32/.platformio-core)
 .platformio-core/
 .venv/
 
-# Artefactos de herramientas locales
+# Local tooling artifacts
 .playwright-mcp/
 
-# Mockups y capturas de diseno (no son assets del firmware)
+# Design mockups and screenshots (not firmware assets)
 *.png
-# Excepcion: los previews de las piezas 3D si son assets del repo
+# Exception: the 3D part previews are repo assets
 !3d-models/previews/*.png

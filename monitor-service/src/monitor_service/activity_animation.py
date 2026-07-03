@@ -7,17 +7,17 @@ from PIL import Image, ImageDraw
 
 from monitor_service.types import ActivityAnimationConfig
 
-# Cabecera binaria del paquete que el ESP32 descarga y almacena (formato little-endian).
+# Binary header of the package the ESP32 downloads and stores (little-endian format).
 ANIM_PACK_MAGIC = 0xA1
 ANIM_PACK_VERSION = 1
 ANIM_PACK_HEADER_BYTES = 10
 
-# Revisión del contenido de los generadores: se incluye en el ETag para invalidar la
-# cache del ESP cuando cambia el dibujo de un estilo sin cambiar sus parámetros. Subir
-# este número cada vez que se modifique cómo se renderiza un estilo existente.
+# Content revision of the generators: included in the ETag to invalidate the
+# ESP cache when the drawing of a style changes without changing its parameters. Bump
+# this number every time the way an existing style is rendered is modified.
 ANIM_CONTENT_REVISION = 2
 
-# Escala del GIF de preview en la web.
+# Scale of the preview GIF on the web.
 PREVIEW_SCALE = 8
 
 
@@ -27,12 +27,12 @@ def _new_frame(width: int, height: int) -> tuple[Image.Image, ImageDraw.ImageDra
 
 
 def _dot_radius(height: int) -> float:
-    # Radio del punto acotado al alto disponible para que no se salga ni desaparezca.
+    # Dot radius bounded to the available height so it neither overflows nor disappears.
     return max(0.5, min(1.5, (height - 1) / 2.0))
 
 
 def _spinner_frames(width: int, height: int) -> list[Image.Image]:
-    # Un punto que orbita alrededor del centro: 8 posiciones equiespaciadas.
+    # A dot orbiting around the center: 8 evenly spaced positions.
     frames: list[Image.Image] = []
     center_x = width / 2.0 - 0.5
     center_y = height / 2.0 - 0.5
@@ -49,7 +49,7 @@ def _spinner_frames(width: int, height: int) -> list[Image.Image]:
 
 
 def _dots_frames(width: int, height: int) -> list[Image.Image]:
-    # Tres puntos que se encienden de forma progresiva (1, 2, 3).
+    # Three dots that light up progressively (1, 2, 3).
     frames: list[Image.Image] = []
     positions = (
         max(1, width // 6),
@@ -74,9 +74,9 @@ def _march_right_frames(
     shape_h: int,
     draw_shape: Callable[[ImageDraw.ImageDraw, int, int, int, int], None],
 ) -> list[Image.Image]:
-    # Elementos equiespaciados que avanzan hacia la derecha y reaparecen al inicio.
-    # draw_shape pinta un elemento dado (left, top, ancho, alto); PIL recorta lo que
-    # sobresalga del lienzo, así que la marcha es robusta a cualquier tamaño.
+    # Evenly spaced elements that move to the right and reappear at the start.
+    # draw_shape paints a given element (left, top, width, height); PIL clips whatever
+    # overflows the canvas, so the march is robust to any size.
     frames: list[Image.Image] = []
     top_y = max(0, (height - shape_h) // 2)
     spacing = max(shape_w + 1, width // 4)
@@ -96,7 +96,7 @@ def _draw_square(draw: ImageDraw.ImageDraw, left: int, top: int, shape_w: int, s
 
 
 def _draw_plus(draw: ImageDraw.ImageDraw, left: int, top: int, shape_w: int, shape_h: int) -> None:
-    # Estrella en forma de "+": brazo horizontal y vertical cruzados en el centro.
+    # Star shaped like "+": horizontal and vertical arms crossed at the center.
     center_x = left + (shape_w - 1) // 2
     center_y = top + (shape_h - 1) // 2
     draw.rectangle((left, center_y, left + shape_w - 1, center_y), fill=1)
@@ -104,22 +104,22 @@ def _draw_plus(draw: ImageDraw.ImageDraw, left: int, top: int, shape_w: int, sha
 
 
 def _dots_right_frames(width: int, height: int) -> list[Image.Image]:
-    # Puntos cuadrados de 3x3 px (acotados al lienzo) que avanzan hacia la derecha.
+    # Square dots of 3x3 px (bounded to the canvas) that move to the right.
     shape_w = max(1, min(3, width))
     shape_h = max(1, min(3, height))
     return _march_right_frames(width, height, shape_w, shape_h, _draw_square)
 
 
 def _stars_right_frames(width: int, height: int) -> list[Image.Image]:
-    # Estrellas en forma de "+" que avanzan hacia la derecha. Lados impares para que
-    # el cruce quede centrado; 3x3 por defecto y se reduce si el lienzo es menor.
+    # Stars shaped like "+" that move to the right. Odd sides so that
+    # the crossing stays centered; 3x3 by default and reduced if the canvas is smaller.
     shape_w = max(1, min(3, width))
     shape_h = max(1, min(3, height))
     return _march_right_frames(width, height, shape_w, shape_h, _draw_plus)
 
 
 def _pulse_frames(width: int, height: int) -> list[Image.Image]:
-    # Círculo lleno que late: crece y decrece.
+    # Filled circle that beats: grows and shrinks.
     frames: list[Image.Image] = []
     center_x = width / 2.0 - 0.5
     center_y = height / 2.0 - 0.5
@@ -134,7 +134,7 @@ def _pulse_frames(width: int, height: int) -> list[Image.Image]:
 
 
 def _bars_frames(width: int, height: int) -> list[Image.Image]:
-    # Ecualizador de tres barras con alturas que cambian por frame.
+    # Three-bar equalizer with heights that change per frame.
     frames: list[Image.Image] = []
     bar_width = max(1, width // 16)
     gap = max(1, (width - bar_width * 3) // 4)
@@ -157,7 +157,7 @@ def _bars_frames(width: int, height: int) -> list[Image.Image]:
 
 
 def _wave_frames(width: int, height: int) -> list[Image.Image]:
-    # Senoide viajera de 2 px por columna para que se lea como una onda continua.
+    # Traveling sine of 2 px per column so it reads as a continuous wave.
     frames: list[Image.Image] = []
     center_y = (height - 1) / 2.0
     amplitude = (height - 1) / 2.0
@@ -175,8 +175,8 @@ def _wave_frames(width: int, height: int) -> list[Image.Image]:
 
 
 def _worm_frames(width: int, height: int) -> list[Image.Image]:
-    # Port del sketch Gusano_SSD1306.ino: rebote horizontal con onda triangular,
-    # ondulación vertical senoidal y cuerpo como historial de la cabeza.
+    # Port of the Gusano_SSD1306.ino sketch: horizontal bounce with triangular wave,
+    # sinusoidal vertical wiggle and body as the head's history.
     frames: list[Image.Image] = []
     worm_length = max(3, min(9, width // 5))
     center_y = (height - 1) / 2.0
@@ -207,8 +207,8 @@ def _worm_frames(width: int, height: int) -> list[Image.Image]:
             if index == 0:
                 draw.point(point, fill=1)
                 continue
-            # Une los puntos del historial para que el gusano no quede "roto" cuando
-            # la cabeza cambia de fila entre frames.
+            # Join the history points so the worm does not look "broken" when
+            # the head changes row between frames.
             previous = history[index - 1]
             draw.line((previous[0], previous[1], point[0], point[1]), fill=1)
         frames.append(image)
@@ -217,7 +217,7 @@ def _worm_frames(width: int, height: int) -> list[Image.Image]:
 
 
 def _ball_frames(width: int, height: int) -> list[Image.Image]:
-    # Pelota que rebota de un extremo al otro en horizontal (ida y vuelta).
+    # Ball that bounces from one end to the other horizontally (back and forth).
     frames: list[Image.Image] = []
     radius = _dot_radius(height)
     center_y = height / 2.0 - 0.5
@@ -225,7 +225,7 @@ def _ball_frames(width: int, height: int) -> list[Image.Image]:
     right = max(left, width - 1 - radius)
     steps = 7
     forward = [left + (right - left) * step / steps for step in range(steps + 1)]
-    # Rebote: vuelve por el camino inverso sin repetir los extremos.
+    # Bounce: returns along the reverse path without repeating the ends.
     sweep = forward + forward[-2:0:-1]
     for center_x in sweep:
         image, draw = _new_frame(width, height)
@@ -257,7 +257,7 @@ def _flags_byte(config: ActivityAnimationConfig) -> int:
 
 
 def pack_activity_animation(config: ActivityAnimationConfig) -> bytes:
-    # Empaqueta cabecera + frames (formato Adafruit drawBitmap por frame) para el ESP32.
+    # Packs header + frames (Adafruit drawBitmap format per frame) for the ESP32.
     width = config["frame_width"]
     height = config["frame_height"]
     frames = render_activity_frames(config["style"], width, height)
@@ -284,7 +284,7 @@ def pack_activity_animation(config: ActivityAnimationConfig) -> bytes:
 
 
 def activity_animation_etag(config: ActivityAnimationConfig) -> str:
-    # ETag estable por contenido: cambia solo si cambia lo que el ESP debe re-descargar.
+    # Content-stable ETag: changes only if what the ESP must re-download changes.
     fingerprint = "|".join(
         [
             str(ANIM_PACK_VERSION),
@@ -300,7 +300,7 @@ def activity_animation_etag(config: ActivityAnimationConfig) -> str:
 
 
 def render_activity_preview_gif(config: ActivityAnimationConfig) -> bytes:
-    # GIF animado (ampliado) para previsualizar la animación en la web.
+    # Animated (enlarged) GIF to preview the animation on the web.
     width = config["frame_width"]
     height = config["frame_height"]
     frames = render_activity_frames(config["style"], width, height)

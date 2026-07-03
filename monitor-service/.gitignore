@@ -1,15 +1,15 @@
-# Cache de bytecode Python
+# Python bytecode cache
 __pycache__/
 *.pyc
 
-# Metadatos de build/instalacion
+# Build/install metadata
 *.egg-info/
 
-# Cache de pruebas
+# Test cache
 .pytest_cache/
 
-# Entorno virtual local
+# Local virtual environment
 .venv/
 
-# Datos locales en runtime
+# Local runtime data
 data/

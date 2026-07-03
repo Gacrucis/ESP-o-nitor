@@ -5,9 +5,9 @@ from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Salvapantallas a pantalla completa (anti burn-in cuando el servicio está caído).
-# Aquí solo se generan los PREVIEWS animados de la web; el ESP los renderiza de
-# forma procedural en su firmware con un aspecto equivalente.
+# Full-screen screensavers (anti burn-in when the service is down).
+# Here only the animated PREVIEWS for the web are generated; the ESP renders them
+# procedurally in its firmware with an equivalent look.
 WIDTH = 128
 HEIGHT = 64
 PREVIEW_SCALE = 2
@@ -21,12 +21,12 @@ def _new_frame() -> tuple[Image.Image, ImageDraw.ImageDraw]:
 
 
 def _black_frames() -> list[Image.Image]:
-    # Pantalla apagada: lo más seguro contra burn-in.
+    # Screen off: the safest against burn-in.
     return [_new_frame()[0] for _ in range(2)]
 
 
 def _snake_frames() -> list[Image.Image]:
-    # Culebra que persigue comida en una grilla y crece.
+    # Snake that chases food on a grid and grows.
     cell = 4
     cols = WIDTH // cell
     rows = HEIGHT // cell
@@ -41,7 +41,7 @@ def _snake_frames() -> list[Image.Image]:
         step_x = (food[0] > head_x) - (food[0] < head_x)
         step_y = (food[1] > head_y) - (food[1] < head_y)
         if step_x != 0 and step_y != 0:
-            # Un eje por paso para que se vea como movimiento de culebra.
+            # One axis per step so it looks like snake movement.
             if rng.random() < 0.5:
                 step_y = 0
             else:
@@ -64,7 +64,7 @@ def _snake_frames() -> list[Image.Image]:
 
 
 def _pipes_frames() -> list[Image.Image]:
-    # Tubería estilo Win95: crece en línea recta con giros aleatorios; al llenarse, limpia.
+    # Win95-style pipe: grows in a straight line with random turns; when full, it clears.
     cell = 8
     cols = WIDTH // cell
     rows = HEIGHT // cell
@@ -100,7 +100,7 @@ def _pipes_frames() -> list[Image.Image]:
 
 
 def _matrix_frames() -> list[Image.Image]:
-    # Lluvia de código: columnas de caracteres alfanuméricos que caen.
+    # Code rain: columns of alphanumeric characters that fall.
     font = ImageFont.load_default()
     column_width = 10
     row_height = 11
@@ -127,20 +127,20 @@ def _matrix_frames() -> list[Image.Image]:
             if head - tail > rows:
                 heads[index] = rng.uniform(-rows, -1.0)
                 speeds[index] = rng.uniform(0.5, 1.3)
-            # Mutar un glifo al azar da el parpadeo característico de la lluvia.
+            # Mutating a random glyph gives the characteristic flicker of the rain.
             glyphs[index][rng.randrange(rows)] = rng.choice(charset)
         frames.append(image)
     return frames
 
 
 def _dvd_frames() -> list[Image.Image]:
-    # Mini logo DVD (oval + "DVD" + banda "VIDEO") que rebota en los bordes.
+    # Mini DVD logo (oval + "DVD" + "VIDEO" band) that bounces off the edges.
     font = ImageFont.load_default()
     box_w = 40
     box_h = 22
     x = 8.0
     y = 8.0
-    # Velocidad constante 2.0/1.0 (suave, mas lento que el clasico 3.0/2.0).
+    # Constant speed 2.0/1.0 (smooth, slower than the classic 3.0/2.0).
     vx = 2.0
     vy = 1.0
     frames: list[Image.Image] = []
@@ -158,7 +158,7 @@ def _dvd_frames() -> list[Image.Image]:
         left = int(x)
         top = int(y)
         center_x = left + box_w // 2
-        # Oval caracteristico + "DVD" dentro + banda "VIDEO" debajo.
+        # Characteristic oval + "DVD" inside + "VIDEO" band below.
         draw.ellipse((center_x - 18, top + 1, center_x + 18, top + 13), outline=1)
         draw.text((center_x - 9, top + 3), "DVD", font=font, fill=1)
         draw.rounded_rectangle((left + 4, top + 14, left + 36, top + 22), radius=2, fill=1)
@@ -168,13 +168,13 @@ def _dvd_frames() -> list[Image.Image]:
 
 
 def _maze_frames() -> list[Image.Image]:
-    # Laberinto perfecto (recursive backtracker) con un punto recorriendo los pasillos.
+    # Perfect maze (recursive backtracker) with a dot traversing the corridors.
     cell = 8
     cols = WIDTH // cell
     rows = HEIGHT // cell
     rng = random.Random(5)
 
-    # Genera el laberinto quitando paredes entre celdas conectadas.
+    # Generate the maze by removing walls between connected cells.
     open_edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
     visited = [[False] * cols for _ in range(rows)]
     stack = [(0, 0)]
@@ -238,7 +238,7 @@ def _maze_frames() -> list[Image.Image]:
 
 
 def _flower_frames() -> list[Image.Image]:
-    # "Flower Box": curva rosa r=cos(k*theta) que rota y rebota en las paredes.
+    # "Flower Box": rose curve r=cos(k*theta) that rotates and bounces off the walls.
     radius = 14.0
     x = WIDTH / 2.0
     y = HEIGHT / 2.0
