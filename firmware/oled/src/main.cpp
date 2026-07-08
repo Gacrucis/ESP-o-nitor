@@ -12,8 +12,9 @@
 #include <Wire.h>
 
 // Local credentials: copy include/secrets.example.h to include/secrets.h (git-ignored)
-// and put your WiFi and OTA password there. Without that file, empty defaults are used
-// and the ESP boots into the emergency AP to be configured from its web page.
+// and put your WiFi and OTA password (and, optionally, your service URL) there. Without that
+// file, empty defaults are used and the ESP boots into the emergency AP to be configured from
+// its web page.
 #if __has_include("secrets.h")
 #include "secrets.h"
 #endif
@@ -25,6 +26,9 @@
 #endif
 #ifndef SECRET_OTA_PASSWORD
 #define SECRET_OTA_PASSWORD ""
+#endif
+#ifndef SECRET_SERVICE_URL
+#define SECRET_SERVICE_URL ""
 #endif
 
 const uint32_t SERIAL_BAUD_RATE = 115200;
@@ -75,7 +79,7 @@ const char DEFAULT_WIFI_PASSWORD[] = SECRET_WIFI_PASSWORD;
 const char EMERGENCY_AP_SSID[] = "ESP32-Emergencia";
 const char EMERGENCY_AP_PASSWORD[] = "configesp32";
 const char EMERGENCY_AP_URL[] = "http://192.168.4.1";
-const char DEFAULT_SERVICE_URL[] = "http://192.168.1.75:8765";
+const char DEFAULT_SERVICE_URL[] = SECRET_SERVICE_URL;
 const size_t SERIAL_LOG_MAX_LENGTH = 8000;
 const uint8_t BOOT_LOG_MAX_LINES = 8;
 const uint8_t BOOT_LOG_MAX_CHARS = 21;

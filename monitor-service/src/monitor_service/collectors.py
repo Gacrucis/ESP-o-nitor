@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -14,6 +15,7 @@ CODEX_SECONDARY_MINUTES = 10080
 _codex_cache_lock = threading.Lock()
 _codex_last_reading: ToolUsageReading | None = None
 _codex_last_attempt_ms = 0
+_codex_last_rollout_mtime_ms = 0
 
 
 def read_json_object(path: Path) -> dict[str, Any]:
@@ -87,12 +89,17 @@ def get_claude_busy(claude_home: Path, current_ms: int, stale_seconds: int, incl
     stale_ms = stale_seconds * 1000
     for session_path in sorted(sessions_path.glob("*.json")):
         session = read_json_object(session_path)
+
+        # A busy session whose updatedAt froze mid-turn is kept alive by its transcript mtime; an
+        # idle session still uses updatedAt alone (the transcript fallback only rescues "busy").
+        if str(session.get("status", "idle")) == "busy":
+            if _busy_session_is_fresh(session, claude_home, current_ms, stale_ms):
+                return True
+            continue
+
         updated_at = int(session.get("updatedAt", 0))
         if (current_ms - updated_at) > stale_ms:
             continue
-
-        if str(session.get("status", "idle")) == "busy":
-            return True
 
         if not include_subagents:
             continue
@@ -120,10 +127,11 @@ def count_busy_claude_sessions(claude_home: Path, current_ms: int, stale_seconds
     busy_ids: set[str] = set()
     for session_path in sorted(sessions_path.glob("*.json")):
         session = read_json_object(session_path)
-        updated_at = int(session.get("updatedAt", 0))
-        if (current_ms - updated_at) > stale_ms:
-            continue
         if str(session.get("status", "idle")) != "busy":
+            continue
+        # Same frozen-updatedAt problem as get_claude_busy: a long busy turn stays live via its
+        # transcript mtime so the session dots do not vanish while Claude keeps working.
+        if not _busy_session_is_fresh(session, claude_home, current_ms, stale_ms):
             continue
         session_id = str(session.get("sessionId", ""))
         if session_id == "":
@@ -174,6 +182,36 @@ def _find_claude_transcript(claude_home: Path, session_id: str) -> Path | None:
         return None
 
     return max(matches, key=lambda path: path.stat().st_mtime)
+
+
+def _busy_session_is_fresh(session: dict[str, Any], claude_home: Path, current_ms: int, stale_ms: int) -> bool:
+    # Claude Code stamps updatedAt in sessions/*.json only on status TRANSITIONS: during a long
+    # continuous "busy" turn the file freezes at the instant it went busy and is never bumped
+    # again. The freshness filter based only on updatedAt therefore discarded a session working
+    # for longer than stale_seconds, and the service stopped reporting "busy" even though Claude
+    # was still working. The transcript JSONL, in contrast, is appended on every event, so its
+    # mtime is the real liveness heartbeat: a busy session is fresh if EITHER updatedAt or its
+    # transcript was touched within the window. A crashed/abandoned busy session stops writing the
+    # transcript and correctly ages out.
+    updated_at = int(session.get("updatedAt", 0))
+    if (current_ms - updated_at) <= stale_ms:
+        return True
+
+    session_id = str(session.get("sessionId", ""))
+    if session_id == "":
+        return False
+
+    transcript_path = _find_claude_transcript(claude_home, session_id)
+    if transcript_path is None:
+        return False
+
+    try:
+        transcript_mtime_ms = int(transcript_path.stat().st_mtime * 1000)
+    except OSError as error:
+        log_event("claude_transcript_stat_failed", path=str(transcript_path), detail=str(error))
+        return False
+
+    return (current_ms - transcript_mtime_ms) <= stale_ms
 
 
 def _session_has_active_subagents(transcript_path: Path, current_ms: int, stale_ms: int) -> bool:
@@ -288,7 +326,32 @@ def get_claude_question_status(claude_home: Path, current_ms: int, stale_seconds
     return (False, "")
 
 
+# The cumulative token/message counters are DISPLAY-ONLY: they feed the two web dashboard cards
+# and are never used by the OLED frame or the firmware. Recomputing them meant scanning the whole
+# projects/**/*.jsonl history (hundreds of MB) on every frame refresh, and that full scan was the
+# dominant cost of build_snapshot (~1s warm, ~10s cold on the read-only bind mount) sitting right
+# on the ESP hot path. The result is cached with a generous TTL so a marathon of frame refreshes
+# does not re-walk the history: for cumulative counters a slightly stale total is fine.
+_CLAUDE_OBSERVED_TTL_MS = 60_000
+_claude_observed_cache_lock = threading.Lock()
+_claude_observed_last_ms = 0
+_claude_observed_last: tuple[int, int] | None = None
+
+
 def get_claude_observed_usage(claude_home: Path) -> tuple[int, int]:
+    global _claude_observed_last_ms, _claude_observed_last
+
+    now_ms = int(time.time() * 1000)
+    with _claude_observed_cache_lock:
+        if _claude_observed_last is not None and (now_ms - _claude_observed_last_ms) < _CLAUDE_OBSERVED_TTL_MS:
+            return _claude_observed_last
+        result = _scan_claude_observed_usage(claude_home)
+        _claude_observed_last_ms = now_ms
+        _claude_observed_last = result
+        return result
+
+
+def _scan_claude_observed_usage(claude_home: Path) -> tuple[int, int]:
     projects_path = claude_home / "projects"
     if not projects_path.exists():
         return (0, 0)
@@ -372,6 +435,19 @@ def _rollouts_by_mtime_desc(sessions_path: Path, limit: int) -> list[Path]:
     return [candidate for _, candidate in candidates[:limit]]
 
 
+def _newest_rollout_mtime_ms(sessions_path: Path) -> int:
+    newest_mtime_ms = 0
+    for candidate in sessions_path.rglob("*.jsonl"):
+        try:
+            mtime_ms = int(candidate.stat().st_mtime * 1000)
+        except OSError as error:
+            log_event("codex_rollout_stat_failed", path=str(candidate), detail=str(error))
+            continue
+        if mtime_ms > newest_mtime_ms:
+            newest_mtime_ms = mtime_ms
+    return newest_mtime_ms
+
+
 def _find_rate_limits(node: Any) -> dict[str, Any] | None:
     # Recursively searches for the rate_limits block inside a rollout event.
     if isinstance(node, dict):
@@ -449,15 +525,88 @@ def _rollout_principal_rate_limits(rollout_path: Path) -> dict[str, Any] | None:
     return {"primary": latest_primary, "secondary": latest_secondary}
 
 
-def _newest_principal_rate_limits(sessions_path: Path) -> tuple[Path, dict[str, Any]] | None:
-    # Walks the rollouts from newest to oldest and returns the first main model quota found.
-    # If the last session was spark, it goes back until a main one.
+def _section_has_usage(section: Any) -> bool:
+    # Una sección con used_percent 0 suele ser un snapshot inicial/vacío que no debe borrar el
+    # último valor útil conocido. Solo cuenta como lectura útil si reporta consumo real.
+    if not isinstance(section, dict):
+        return False
+    used_percent = section.get("used_percent")
+    return isinstance(used_percent, (int, float)) and used_percent > 0.0
+
+
+def _section_reset_ms(section: dict[str, Any]) -> int | None:
+    resets_at = section.get("resets_at")
+    if not isinstance(resets_at, (int, float)) or resets_at <= 0:
+        return None
+    return int(resets_at * 1000)
+
+
+CodexSectionCandidate = tuple[Path, dict[str, Any]]
+
+
+def _select_codex_section(candidates: list[CodexSectionCandidate], current_ms: int) -> CodexSectionCandidate | None:
+    # El snapshot más nuevo manda, salvo por un caso: Codex a veces escribe un 0% inicial dentro
+    # de un rollout antiguo y ese 0% no debe borrar el consumo real. Un 0% nuevo solo gana cuando
+    # la lectura anterior con consumo ya venció; antes de eso es más probable que sea inicialización
+    # de sesión que una ventana fresca real.
+    if len(candidates) == 0:
+        return None
+
+    newest = candidates[0]
+    if _section_has_usage(newest[1]):
+        return newest
+
+    for candidate in candidates[1:]:
+        if not _section_has_usage(candidate[1]):
+            continue
+        reset_ms = _section_reset_ms(candidate[1])
+        if reset_ms is not None and reset_ms <= current_ms:
+            return newest
+        return candidate
+
+    return newest
+
+
+def _newest_principal_rate_limits(sessions_path: Path, current_ms: int) -> tuple[Path, dict[str, Any]] | None:
+    # Recorre de nuevo a viejo y arma la lectura por ventana. Los snapshots en 0% de uso son
+    # válidos si pertenecen a una ventana nueva, pero no deben reemplazar una lectura previa con
+    # consumo real dentro de la misma ventana: Codex puede escribir rate_limits vacíos al iniciar o
+    # reanudar una sesión.
+    fallback: tuple[Path, dict[str, Any]] | None = None
+    primary_candidates: list[CodexSectionCandidate] = []
+    secondary_candidates: list[CodexSectionCandidate] = []
+
     for rollout_path in _rollouts_by_mtime_desc(sessions_path, _CODEX_RATE_LIMIT_CANDIDATE_MAX):
         rate_limits = _rollout_principal_rate_limits(rollout_path)
-        if rate_limits is not None:
-            return (rollout_path, rate_limits)
+        if rate_limits is None:
+            continue
 
-    return None
+        if fallback is None:
+            fallback = (rollout_path, rate_limits)
+
+        primary = rate_limits.get("primary")
+        if isinstance(primary, dict):
+            primary_candidates.append((rollout_path, cast(dict[str, Any], primary)))
+
+        secondary = rate_limits.get("secondary")
+        if isinstance(secondary, dict):
+            secondary_candidates.append((rollout_path, cast(dict[str, Any], secondary)))
+
+    if fallback is None:
+        return None
+
+    fallback_path, fallback_limits = fallback
+    selected_primary = _select_codex_section(primary_candidates, current_ms)
+    selected_secondary = _select_codex_section(secondary_candidates, current_ms)
+    primary_path = selected_primary[0] if selected_primary is not None else fallback_path
+    secondary_path = selected_secondary[0] if selected_secondary is not None else fallback_path
+    observed_path = primary_path if primary_path.stat().st_mtime >= secondary_path.stat().st_mtime else secondary_path
+    merged_limits = {
+        "primary": selected_primary[1] if selected_primary is not None else fallback_limits.get("primary"),
+        "secondary": selected_secondary[1] if selected_secondary is not None else fallback_limits.get("secondary"),
+    }
+
+    return (observed_path, merged_limits)
 
 
 # Cap to sustain "busy" when there is a task_started without task_complete but the
@@ -545,7 +694,11 @@ def _read_rollout_activity(path: Path) -> CodexRolloutActivity:
         payload_type = payload.get("type")
         if payload_type == "task_started":
             last_started = index
-        elif payload_type == "task_complete":
+        elif payload_type in ("task_complete", "turn_aborted"):
+            # turn_aborted is what Codex writes when the user interrupts the turn (Esc/Ctrl+C):
+            # there is NO task_complete in that case, so treating only task_complete as the close
+            # left the task "open" and kept the ESP busy for the whole open-task grace period after
+            # an interrupt. An abort ends the turn just like a normal completion.
             last_complete = index
         elif payload_type == "function_call" and payload.get("name") == "request_user_input":
             last_ask = index
@@ -579,13 +732,13 @@ def _scan_full_task_state(path: Path) -> tuple[bool, bool]:
     # Returns (has_turn_marker, open_task) walking the WHOLE rollout, but json-parsing only the
     # lines that contain the marker tokens (substring prefilter): the cost is reading the file
     # without deserializing the bulky tool outputs. Used as a fallback when the
-    # _CODEX_ROLLOUT_TAIL_BYTES tail did not include any task_started/task_complete. open_task is
-    # True if the last marker in the file was a task_started.
+    # _CODEX_ROLLOUT_TAIL_BYTES tail did not include any turn marker. open_task is True if the last
+    # marker in the file was a task_started (turn_aborted, like task_complete, closes the turn).
     last_marker = ""
     try:
         with path.open("rb") as handle:
             for raw_line in handle:
-                if b"task_started" not in raw_line and b"task_complete" not in raw_line:
+                if b"task_started" not in raw_line and b"task_complete" not in raw_line and b"turn_aborted" not in raw_line:
                     continue
                 try:
                     event = json.loads(raw_line)
@@ -599,7 +752,7 @@ def _scan_full_task_state(path: Path) -> tuple[bool, bool]:
                 payload_type = payload.get("type")
                 if payload_type == "task_started":
                     last_marker = "started"
-                elif payload_type == "task_complete":
+                elif payload_type in ("task_complete", "turn_aborted"):
                     last_marker = "complete"
     except OSError as error:
         raise RuntimeError(f"Could not read {path}: {error}") from error
@@ -811,7 +964,7 @@ def read_codex_rate_limits_reading_uncached(codex_home: Path, current_ms: int) -
         log_event("codex_usage_unavailable", detail=detail)
         return {"ok": False, "source": "codex-rollout-unavailable", "detail": detail, "observed_at_ms": 0, "current": failure_current, "weekly": failure_weekly}
 
-    principal = _newest_principal_rate_limits(sessions_path)
+    principal = _newest_principal_rate_limits(sessions_path, current_ms)
     if principal is None:
         detail = "No main model rate_limits in Codex rollouts"
         log_event("codex_usage_unavailable", detail=detail)
@@ -830,14 +983,26 @@ def read_codex_rate_limits_reading_uncached(codex_home: Path, current_ms: int) -
 
 def read_codex_rate_limits_reading(codex_home: Path, current_ms: int, ttl_seconds: int) -> ToolUsageReading:
     # Configurable throttle to avoid walking sessions/** on every render of the web or the ESP32.
-    global _codex_last_attempt_ms, _codex_last_reading
+    # Un mtime nuevo de rollout invalida el caché de inmediato: el TTL solo aplica mientras el
+    # árbol de sesiones no cambie, así una cuota recién escrita se refleja en el siguiente sondeo.
+    global _codex_last_attempt_ms, _codex_last_reading, _codex_last_rollout_mtime_ms
 
     ttl_ms = ttl_seconds * 1000
     with _codex_cache_lock:
-        if _codex_last_reading is not None and (current_ms - _codex_last_attempt_ms) < ttl_ms:
+        sessions_path = codex_home / "sessions"
+        sessions_exists = sessions_path.exists()
+        newest_rollout_mtime_ms = _newest_rollout_mtime_ms(sessions_path) if sessions_exists else 0
+        cache_is_fresh = (
+            _codex_last_reading is not None
+            and sessions_exists
+            and (current_ms - _codex_last_attempt_ms) < ttl_ms
+            and newest_rollout_mtime_ms <= _codex_last_rollout_mtime_ms
+        )
+        if cache_is_fresh:
             return _codex_last_reading
 
         _codex_last_attempt_ms = current_ms
         reading = read_codex_rate_limits_reading_uncached(codex_home, current_ms)
         _codex_last_reading = reading
+        _codex_last_rollout_mtime_ms = newest_rollout_mtime_ms
         return reading

@@ -11,3 +11,7 @@
 #define SECRET_WIFI_SSID "YOUR_WIFI"
 #define SECRET_WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 #define SECRET_OTA_PASSWORD "YOUR_OTA_PASSWORD"
+
+// Optional default service URL (your PC's IP running monitor-service). Leave empty to
+// configure it later from the ESP web page. Example: "http://192.168.1.100:8765".
+#define SECRET_SERVICE_URL ""

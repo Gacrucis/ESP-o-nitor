@@ -1,10 +1,12 @@
 import json
+import math
 import os
 import time
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, cast
 
+from monitor_service.logutil import log_event
 from monitor_service.types import ActivityAnimationConfig, ServiceConfig, ToolConfig, ToolId, UsageWindowConfig
 
 # Valid animation styles for the activity corner (must exist in activity_animation.py).
@@ -119,6 +121,10 @@ def get_readonly_home(env_name: str) -> Path:
 
 
 def clamp_percent(value: float) -> float:
+    # NaN/Infinity (e.g. a hand-edited or corrupt config; json.loads accepts the NaN token) must
+    # not leak into the render math: int(round(nan)) raises ValueError and would crash the frame.
+    if not math.isfinite(value):
+        return 0.0
     if value < 0.0:
         return 0.0
     if value > 100.0:
@@ -134,14 +140,39 @@ def clamp_int(value: int, minimum: int, maximum: int) -> int:
     return value
 
 
+def to_float(value: Any, fallback: float) -> float:
+    # Total parse used by normalize_*: a non-numeric or null value in a persisted/POSTed config
+    # degrades to the fallback instead of raising ValueError/TypeError out of load_config (which
+    # runs on every ESP poll and web call) and bricking the service.
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return result if math.isfinite(result) else fallback
+
+
+def to_int(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def as_dict(value: Any) -> dict[str, Any]:
+    # A persisted/POSTed config where a nested section (claude, activity_animation, ...) is not an
+    # object would make the downstream `.get(...)` raise AttributeError. Non-dicts collapse to an
+    # empty dict so normalize_* falls back field by field instead of crashing.
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
 def normalize_tool_config(raw_config: dict[str, Any], fallback_config: ToolConfig) -> ToolConfig:
     legacy_window = {
         "remaining_percent": raw_config.get("remaining_percent", fallback_config["current"]["remaining_percent"]),
         "window_start_ms": raw_config.get("window_start_ms", fallback_config["current"]["window_start_ms"]),
         "window_reset_ms": raw_config.get("window_reset_ms", fallback_config["current"]["window_reset_ms"]),
     }
-    raw_current = cast(dict[str, Any], raw_config.get("current", legacy_window))
-    raw_weekly = cast(dict[str, Any], raw_config.get("weekly", fallback_config["weekly"]))
+    raw_current = as_dict(raw_config.get("current", legacy_window))
+    raw_weekly = as_dict(raw_config.get("weekly", fallback_config["weekly"]))
 
     # Migrate the legacy Spanish default so the "no recent data" sentinel keeps matching
     # persisted configs saved before the switch to English.
@@ -161,9 +192,9 @@ def normalize_tool_config(raw_config: dict[str, Any], fallback_config: ToolConfi
 
 def normalize_usage_window_config(raw_config: dict[str, Any], fallback_config: UsageWindowConfig) -> UsageWindowConfig:
     return {
-        "remaining_percent": clamp_percent(float(raw_config.get("remaining_percent", fallback_config["remaining_percent"]))),
-        "window_start_ms": int(raw_config.get("window_start_ms", fallback_config["window_start_ms"])),
-        "window_reset_ms": int(raw_config.get("window_reset_ms", fallback_config["window_reset_ms"])),
+        "remaining_percent": clamp_percent(to_float(raw_config.get("remaining_percent", fallback_config["remaining_percent"]), fallback_config["remaining_percent"])),
+        "window_start_ms": to_int(raw_config.get("window_start_ms", fallback_config["window_start_ms"]), fallback_config["window_start_ms"]),
+        "window_reset_ms": to_int(raw_config.get("window_reset_ms", fallback_config["window_reset_ms"]), fallback_config["window_reset_ms"]),
     }
 
 
@@ -172,21 +203,21 @@ def normalize_activity_animation_config(raw_config: dict[str, Any], fallback_con
     style = raw_style if raw_style in ACTIVITY_ANIMATION_STYLES else fallback_config["style"]
 
     frame_width = clamp_int(
-        int(raw_config.get("frame_width", fallback_config["frame_width"])), ANIM_FRAME_MIN_WIDTH, ANIM_FRAME_MAX_WIDTH
+        to_int(raw_config.get("frame_width", fallback_config["frame_width"]), fallback_config["frame_width"]), ANIM_FRAME_MIN_WIDTH, ANIM_FRAME_MAX_WIDTH
     )
     frame_height = clamp_int(
-        int(raw_config.get("frame_height", fallback_config["frame_height"])), ANIM_FRAME_MIN_HEIGHT, ANIM_FRAME_MAX_HEIGHT
+        to_int(raw_config.get("frame_height", fallback_config["frame_height"]), fallback_config["frame_height"]), ANIM_FRAME_MIN_HEIGHT, ANIM_FRAME_MAX_HEIGHT
     )
 
     return {
         "style": style,
-        "interval_ms": max(20, int(raw_config.get("interval_ms", fallback_config["interval_ms"]))),
+        "interval_ms": max(20, to_int(raw_config.get("interval_ms", fallback_config["interval_ms"]), fallback_config["interval_ms"])),
         "invert_on_waiting": bool(raw_config.get("invert_on_waiting", fallback_config["invert_on_waiting"])),
-        "invert_blink_ms": max(100, int(raw_config.get("invert_blink_ms", fallback_config["invert_blink_ms"]))),
+        "invert_blink_ms": max(100, to_int(raw_config.get("invert_blink_ms", fallback_config["invert_blink_ms"]), fallback_config["invert_blink_ms"])),
         "frame_width": frame_width,
         "frame_height": frame_height,
-        "codex_busy_window_seconds": max(1, int(raw_config.get("codex_busy_window_seconds", fallback_config["codex_busy_window_seconds"]))),
-        "stale_seconds": max(60, int(raw_config.get("stale_seconds", fallback_config["stale_seconds"]))),
+        "codex_busy_window_seconds": max(1, to_int(raw_config.get("codex_busy_window_seconds", fallback_config["codex_busy_window_seconds"]), fallback_config["codex_busy_window_seconds"])),
+        "stale_seconds": max(60, to_int(raw_config.get("stale_seconds", fallback_config["stale_seconds"]), fallback_config["stale_seconds"])),
         "include_codex_subagents": bool(raw_config.get("include_codex_subagents", fallback_config["include_codex_subagents"])),
         "include_claude_subagents": bool(raw_config.get("include_claude_subagents", fallback_config["include_claude_subagents"])),
     }
@@ -206,20 +237,35 @@ def normalize_config(raw_config: dict[str, Any]) -> ServiceConfig:
     fallback_config = build_default_config()
 
     return {
-        "tolerance_percent": clamp_percent(float(raw_config.get("tolerance_percent", fallback_config["tolerance_percent"]))),
+        "tolerance_percent": clamp_percent(to_float(raw_config.get("tolerance_percent", fallback_config["tolerance_percent"]), fallback_config["tolerance_percent"])),
         "theme": normalize_theme(raw_config.get("theme", fallback_config["theme"]), fallback_config["theme"]),
-        "frame_cache_ttl_seconds": max(1, int(raw_config.get("frame_cache_ttl_seconds", fallback_config["frame_cache_ttl_seconds"]))),
-        "claude_usage_ttl_seconds": max(10, int(raw_config.get("claude_usage_ttl_seconds", fallback_config["claude_usage_ttl_seconds"]))),
-        "codex_usage_ttl_seconds": max(1, int(raw_config.get("codex_usage_ttl_seconds", fallback_config["codex_usage_ttl_seconds"]))),
+        "frame_cache_ttl_seconds": max(1, to_int(raw_config.get("frame_cache_ttl_seconds", fallback_config["frame_cache_ttl_seconds"]), fallback_config["frame_cache_ttl_seconds"])),
+        "claude_usage_ttl_seconds": max(10, to_int(raw_config.get("claude_usage_ttl_seconds", fallback_config["claude_usage_ttl_seconds"]), fallback_config["claude_usage_ttl_seconds"])),
+        "codex_usage_ttl_seconds": max(1, to_int(raw_config.get("codex_usage_ttl_seconds", fallback_config["codex_usage_ttl_seconds"]), fallback_config["codex_usage_ttl_seconds"])),
         "activity_animation": normalize_activity_animation_config(
-            cast(dict[str, Any], raw_config.get("activity_animation", {})), fallback_config["activity_animation"]
+            as_dict(raw_config.get("activity_animation", {})), fallback_config["activity_animation"]
         ),
         "screensaver": normalize_screensaver(raw_config.get("screensaver", fallback_config["screensaver"]), fallback_config["screensaver"]),
-        "dim_after_seconds": max(0, int(raw_config.get("dim_after_seconds", fallback_config["dim_after_seconds"]))),
-        "dim_brightness_percent": min(100, max(0, int(raw_config.get("dim_brightness_percent", fallback_config["dim_brightness_percent"])))),
-        "claude": normalize_tool_config(cast(dict[str, Any], raw_config.get("claude", {})), fallback_config["claude"]),
-        "codex": normalize_tool_config(cast(dict[str, Any], raw_config.get("codex", {})), fallback_config["codex"]),
+        "dim_after_seconds": max(0, to_int(raw_config.get("dim_after_seconds", fallback_config["dim_after_seconds"]), fallback_config["dim_after_seconds"])),
+        "dim_brightness_percent": min(100, max(0, to_int(raw_config.get("dim_brightness_percent", fallback_config["dim_brightness_percent"]), fallback_config["dim_brightness_percent"]))),
+        "claude": normalize_tool_config(as_dict(raw_config.get("claude", {})), fallback_config["claude"]),
+        "codex": normalize_tool_config(as_dict(raw_config.get("codex", {})), fallback_config["codex"]),
     }
+
+
+def _recover_corrupt_config(config_path: Path, detail: str) -> ServiceConfig:
+    # A corrupt/truncated config.json must not brick the whole service: load_config runs on every
+    # ESP poll and web call. The unreadable file is moved aside (for inspection) and defaults are
+    # rebuilt so the device keeps working instead of returning 500 on every request.
+    backup_path = config_path.with_suffix(".corrupt")
+    try:
+        os.replace(config_path, backup_path)
+    except OSError as error:
+        log_event("config_corrupt_backup_failed", detail=str(error))
+    log_event("config_corrupt_recovered", detail=detail, backup=str(backup_path))
+    config = build_default_config()
+    save_config(config)
+    return config
 
 
 def load_config() -> ServiceConfig:
@@ -230,25 +276,42 @@ def load_config() -> ServiceConfig:
         return config
 
     try:
-        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
-    except JSONDecodeError as error:
-        raise RuntimeError(f"Invalid config JSON in {config_path}: {error}") from error
+        raw_text = config_path.read_text(encoding="utf-8")
     except OSError as error:
+        # A read failure (permissions, transient IO) is NOT corruption: fail loud instead of
+        # clobbering a possibly-good file with defaults.
         raise RuntimeError(f"Could not read the configuration at {config_path}: {error}") from error
 
+    try:
+        raw_config = json.loads(raw_text)
+    except (JSONDecodeError, ValueError) as error:
+        return _recover_corrupt_config(config_path, f"invalid JSON: {error}")
+
     if not isinstance(raw_config, dict):
-        raise RuntimeError(f"The configuration at {config_path} must be a JSON object")
+        return _recover_corrupt_config(config_path, "config root is not a JSON object")
 
     return normalize_config(cast(dict[str, Any], raw_config))
 
 
 def save_config(config: ServiceConfig) -> None:
+    # Atomic write: serialize to a temp file, fsync, then os.replace (atomic rename on the same
+    # filesystem). A crash or full disk mid-write can no longer leave config.json truncated, which
+    # previously bricked load_config (JSONDecodeError on every request) until manual repair.
     config_path = get_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
 
     try:
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(config, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, config_path)
     except OSError as error:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         raise RuntimeError(f"Could not save the configuration at {config_path}: {error}") from error
 
 

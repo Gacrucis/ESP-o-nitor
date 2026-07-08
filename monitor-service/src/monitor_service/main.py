@@ -554,6 +554,7 @@ APP_HTML = r"""<!doctype html>
 
   <script>
     let currentConfig = null;
+    let currentSnapshot = null;
 
     function $(id) { return document.getElementById(id); }
     let toastTimer = null;
@@ -789,12 +790,13 @@ APP_HTML = r"""<!doctype html>
         card.classList.toggle('active', card.dataset.saver === currentConfig.screensaver);
       });
     }
-    // Periodic refresh: updates live data but does NOT rewrite the forms, to
-    // avoid clobbering what the user is editing. The forms are filled in refresh().
+    // Actualización periódica: refresca datos vivos sin reescribir formularios para no pisar una
+    // edición en curso. Los formularios se llenan en refresh().
     async function refreshLive() {
       const snapshot = await loadJson('/api/esp/snapshot');
       const status = await loadJson('/api/status');
       currentConfig = await loadJson('/api/config');
+      currentSnapshot = snapshot;
       await ensureThemeGallery();
       ensureSaverGallery();
       $('service-pill').textContent = 'Service online';
@@ -808,10 +810,10 @@ APP_HTML = r"""<!doctype html>
       updateThemeGallery(stamp);
       updateSaverGallery();
     }
-    // Full refresh: also fills the forms (initial load and after saving).
+    // Actualización completa: también llena formularios al cargar y después de guardar.
     async function refresh() {
       await refreshLive();
-      if (currentConfig) fillForms(currentConfig);
+      if (currentConfig && currentSnapshot) fillForms(currentConfig, currentSnapshot);
     }
     async function pollEspStatus() {
       try {
@@ -868,23 +870,23 @@ APP_HTML = r"""<!doctype html>
         effect.textContent = 'Configuration changes apply on the ESP next poll.';
       }
     }
-    function fillForms(config) {
+    function fillForms(config, snapshot) {
       $('claude-label').value = config.claude.label;
       $('codex-label').value = config.codex.label;
       $('tolerance').value = config.tolerance_percent;
       $('codex-status').value = config.codex.status_text;
-      $('claude-remaining').value = Math.round(config.claude.current.remaining_percent);
-      $('claude-weekly-remaining').value = Math.round(config.claude.weekly.remaining_percent);
-      $('codex-remaining').value = Math.round(config.codex.current.remaining_percent);
-      $('codex-weekly-remaining').value = Math.round(config.codex.weekly.remaining_percent);
-      $('claude-start').value = toLocalInput(config.claude.current.window_start_ms);
-      $('claude-reset').value = toLocalInput(config.claude.current.window_reset_ms);
-      $('claude-weekly-start').value = toLocalInput(config.claude.weekly.window_start_ms);
-      $('claude-weekly-reset').value = toLocalInput(config.claude.weekly.window_reset_ms);
-      $('codex-start').value = toLocalInput(config.codex.current.window_start_ms);
-      $('codex-reset').value = toLocalInput(config.codex.current.window_reset_ms);
-      $('codex-weekly-start').value = toLocalInput(config.codex.weekly.window_start_ms);
-      $('codex-weekly-reset').value = toLocalInput(config.codex.weekly.window_reset_ms);
+      $('claude-remaining').value = Math.round(snapshot.claude.current.remaining_percent);
+      $('claude-weekly-remaining').value = Math.round(snapshot.claude.weekly.remaining_percent);
+      $('codex-remaining').value = Math.round(snapshot.codex.current.remaining_percent);
+      $('codex-weekly-remaining').value = Math.round(snapshot.codex.weekly.remaining_percent);
+      $('claude-start').value = toLocalInput(snapshot.claude.current.window_start_ms);
+      $('claude-reset').value = toLocalInput(snapshot.claude.current.window_reset_ms);
+      $('claude-weekly-start').value = toLocalInput(snapshot.claude.weekly.window_start_ms);
+      $('claude-weekly-reset').value = toLocalInput(snapshot.claude.weekly.window_reset_ms);
+      $('codex-start').value = toLocalInput(snapshot.codex.current.window_start_ms);
+      $('codex-reset').value = toLocalInput(snapshot.codex.current.window_reset_ms);
+      $('codex-weekly-start').value = toLocalInput(snapshot.codex.weekly.window_start_ms);
+      $('codex-weekly-reset').value = toLocalInput(snapshot.codex.weekly.window_reset_ms);
       $('claude-waiting').value = String(config.claude.waiting_for_user);
       $('codex-waiting').value = String(config.codex.waiting_for_user);
       $('frame-cache-ttl-sec').value = Math.max(1, Number(config.frame_cache_ttl_seconds || 5));
@@ -1114,10 +1116,20 @@ def dumps_json(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+# Cap the request body: config payloads are a few KB; this bounds a malformed or hostile
+# Content-Length so a single request cannot make the server allocate/block on a huge read.
+_MAX_REQUEST_BODY_BYTES = 262144
+
+
 def read_request_json(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
-    content_length = int(handler.headers.get("Content-Length", "0"))
+    try:
+        content_length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError as error:
+        raise RuntimeError(f"Invalid Content-Length header: {error}") from error
     if content_length <= 0:
         raise RuntimeError("The JSON body is empty")
+    if content_length > _MAX_REQUEST_BODY_BYTES:
+        raise RuntimeError(f"Request body too large ({content_length} bytes, max {_MAX_REQUEST_BODY_BYTES})")
 
     raw_body = handler.rfile.read(content_length)
     try:
@@ -1274,8 +1286,16 @@ def start_frame_cache_refresh(reason: str) -> None:
             return
         _frame_refreshing = True
 
-    thread = threading.Thread(target=refresh_frame_cache, args=(reason,), daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=refresh_frame_cache, args=(reason,), daemon=True)
+        thread.start()
+    except RuntimeError as error:
+        # If the thread cannot be created, reset the flag: otherwise should_refresh stays False
+        # forever and the frame cache freezes on its last value / fallback permanently.
+        with _frame_cache_lock:
+            _frame_refreshing = False
+        log_event("frame_cache_refresh_start_failed", reason=reason, detail=str(error))
+        return
     log_event("frame_cache_refresh_started", reason=reason)
 
 
@@ -1425,13 +1445,32 @@ def save_config_from_payload(payload: dict[str, Any]) -> ServiceConfig:
 
 
 class MonitorRequestHandler(BaseHTTPRequestHandler):
+    # Socket timeout for reading the request line/headers: a client (flaky ESP wifi) that opens a
+    # connection and stalls mid-request no longer leaks its handler thread forever. It is wider
+    # than the activity long-poll hold so that legitimate wait does not trip it.
+    timeout = 60
+
     def send_bytes(self, status_code: int, content_type: str, body: bytes) -> None:
         self.send_response(status_code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError) as error:
+            # The ESP/browser dropped the connection mid-response: benign, do not let it escape the
+            # handler (would be an uncaught error tearing down the thread with a traceback).
+            log_event("response_client_disconnected", path=self.path, detail=str(error))
+
+    def _best_effort_error(self, status_code: int, message: str) -> None:
+        # Sends an error response but never raises: if the response was already partially written
+        # (e.g. an exception after end_headers), there is nothing sane to send and the connection
+        # is likely gone anyway.
+        try:
+            self.send_error_json(status_code, message)
+        except Exception as error:
+            log_event("error_response_failed", path=self.path, detail=str(error))
 
     def send_json(self, status_code: int, body: object) -> None:
         self.send_bytes(status_code, "application/json; charset=utf-8", dumps_json(body))
@@ -1632,8 +1671,15 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
                 return
 
             self.send_error_json(404, f"Route not found: {parsed_path}")
-        except RuntimeError as error:
-            self.send_error_json(500, str(error))
+        except (BrokenPipeError, ConnectionResetError) as error:
+            # The ESP dropped the connection: nothing to send, just record it.
+            log_event("request_client_disconnected", method="GET", path=parsed_path, detail=str(error))
+        except Exception as error:
+            # Any handler error (corrupt session file, PIL failure, disk OSError, bad data) must
+            # become a 500 instead of an uncaught exception that closes the socket with no reply,
+            # which the ESP reads as a read-timeout / "service down".
+            log_event("request_failed", method="GET", path=parsed_path, detail=str(error))
+            self._best_effort_error(500, str(error))
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path).path
@@ -1652,8 +1698,14 @@ class MonitorRequestHandler(BaseHTTPRequestHandler):
                 return
 
             self.send_error_json(404, f"Route not found: {parsed_path}")
-        except RuntimeError as error:
-            self.send_error_json(400, str(error))
+        except (BrokenPipeError, ConnectionResetError) as error:
+            log_event("request_client_disconnected", method="POST", path=parsed_path, detail=str(error))
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError) as error:
+            # Bad/malformed body (non-numeric fields, wrong shapes): a client error -> 400.
+            self._best_effort_error(400, str(error))
+        except Exception as error:
+            log_event("request_failed", method="POST", path=parsed_path, detail=str(error))
+            self._best_effort_error(500, str(error))
 
     def log_message(self, message_format: str, *args: object) -> None:
         print(f"{self.address_string()} - {message_format % args}")

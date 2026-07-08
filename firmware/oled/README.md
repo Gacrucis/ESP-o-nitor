@@ -1,9 +1,11 @@
-# ESP-o-nitor (firmware)
+# ESP-o-nitor - OLED firmware
 
-Firmware for an ESP32 with two SSD1306 OLED displays (128x64) that act as a physical usage
-monitor for Claude and Codex. The ESP32 computes nothing: it only projects the framebuffers
-produced by the [monitor-service](../monitor-service/), animates the activity corner and shows
-local screensavers when the service does not respond.
+The **OLED variant** of [ESP-o-nitor](../../): firmware for an ESP32 with two SSD1306 OLED
+displays (128x64) that act as a physical usage monitor for Claude and Codex. The ESP32 computes
+nothing: it only projects the framebuffers produced by the [monitor-service](../../monitor-service/),
+animates the activity corner and shows local screensavers when the service does not respond.
+
+For the color single-screen build see the [CYD variant](../cyd/); both talk to the same service.
 
 ## Architecture
 
@@ -58,7 +60,8 @@ local screensavers when the service does not respond.
 The firmware ships no credentials in the source. To set local default values:
 
 1. Copy `include/secrets.example.h` to `include/secrets.h` and put your SSID, WiFi password and
-   OTA password there. That file is ignored by git and never versioned.
+   OTA password there. You may also set `SECRET_SERVICE_URL` to your PC's service URL (leave it
+   empty to configure it later from the web UI). That file is ignored by git and never versioned.
 2. For OTA flashing, copy `platformio_override.example.ini` to `platformio_override.ini` and put
    the same OTA password in `--auth`. PlatformIO applies it automatically on top of
    `platformio.ini`; it is ignored by git too.
@@ -165,7 +168,7 @@ The default WiFi and OTA credentials come from `include/secrets.h` (see
 
 ## Relationship with the service
 
-This firmware depends on the service in [monitor-service/](../monitor-service/), which exposes the
+This firmware depends on the service in [monitor-service/](../../monitor-service/), which exposes the
 `/api/esp/*` endpoints the ESP consumes. Changes to animation style/size, theme, screensavers,
 brightness and usage data are made in the service web UI and applied on the ESP's next poll,
 without reflashing. You only need to reflash when `src/main.cpp`, `platformio.ini` or the

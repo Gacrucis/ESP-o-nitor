@@ -2,15 +2,17 @@
 secrets.h
 platformio_override.ini
 
-# PlatformIO build artifacts (esp32/.pio)
+# PlatformIO build artifacts (firmware/*/.pio)
 .pio/
 
-# Local PlatformIO toolchain and environment (esp32/.venv, esp32/.platformio-core)
+# Local PlatformIO toolchain and environment (firmware/*/.venv, .platformio-core)
 .platformio-core/
 .venv/
 
 # Local tooling artifacts
 .playwright-mcp/
+.claude/
+.DS_Store
 
 # Design mockups and screenshots (not firmware assets)
 *.png

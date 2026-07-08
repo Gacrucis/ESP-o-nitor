@@ -256,6 +256,18 @@ def _stale_copy(reading: ToolUsageReading, detail: str) -> ToolUsageReading:
     }
 
 
+def _needs_reset_refresh(reading: ToolUsageReading, current_ms: int, last_attempt_ms: int) -> bool:
+    # Si una ventana ya cruzó su resets_at, el TTL no debe retener una cuota de la ventana anterior.
+    # Solo se fuerza una lectura una vez por reset; si ese intento falla, el TTL vuelve a proteger
+    # el endpoint para no convertir el cambio de ventana en un martilleo de consultas.
+    for window in (reading["current"], reading["weekly"]):
+        reset_ms = window["window_reset_ms"]
+        if reset_ms <= current_ms and last_attempt_ms < reset_ms:
+            return True
+
+    return False
+
+
 def read_claude_usage_reading(claude_home: Path, current_ms: int, ttl_seconds: int) -> ToolUsageReading:
     # Degradation boundary with cache. The endpoint is queried at most once
     # every ttl_seconds (throttle by last ATTEMPT, whether or not there is data), so as not to
@@ -275,7 +287,11 @@ def read_claude_usage_reading(claude_home: Path, current_ms: int, ttl_seconds: i
             _bootstrapped = True
 
         # Throttle: if it was attempted recently, returns the last result WITHOUT calling.
-        if _last_reading is not None and (current_ms - _last_attempt_ms) < ttl_ms:
+        if (
+            _last_reading is not None
+            and (current_ms - _last_attempt_ms) < ttl_ms
+            and not _needs_reset_refresh(_last_reading, current_ms, _last_attempt_ms)
+        ):
             return _last_reading
 
         _last_attempt_ms = current_ms

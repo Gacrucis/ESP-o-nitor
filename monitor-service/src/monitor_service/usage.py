@@ -215,22 +215,16 @@ def build_tool_snapshot(
 
 
 def project_window_reset(window_config: UsageWindowConfig, current_ms: int) -> UsageWindowConfig:
-    # The Codex quota is read passively: it stays frozen in the snapshot of the last
-    # request. When the clock passes window_reset_ms the window has already rolled and the bucket
-    # returns to 100%, but there would be no new reading to reflect it: at 0% no messages can be
-    # sent, so a rollout with the reset would never be generated.
-    #
-    # The Codex window is not anchored to an absolute clock: the counter starts with the
-    # FIRST message of the new window and expires window_length later. As long as there are no
-    # messages the window has not started, so it is shown fresh from now (100% remaining
-    # and "resets in 5h" constantly) until a real rollout brings the true
-    # resets_at of the first message.
+    # La cuota de Codex se lee de forma pasiva desde el último snapshot persistido. Cuando la
+    # hora pasa window_reset_ms no hay evidencia suficiente para decir que volvió a 100%: el
+    # siguiente valor real solo aparece cuando Codex escribe otro rate_limits. Por eso, al mover
+    # una ventana vencida se conserva el último porcentaje conocido y solo se proyecta el reloj.
     window_length_ms = window_config["window_reset_ms"] - window_config["window_start_ms"]
     if window_length_ms <= 0 or current_ms < window_config["window_reset_ms"]:
         return window_config
 
     return {
-        "remaining_percent": 100.0,
+        "remaining_percent": window_config["remaining_percent"],
         "window_start_ms": current_ms,
         "window_reset_ms": current_ms + window_length_ms,
     }
@@ -254,6 +248,8 @@ def build_usage_window_snapshot(
         "expected_remaining_percent": expected_remaining,
         "pace": calculate_pace(remaining_percent, expected_remaining, tolerance_percent),
         "reset_in_seconds": calculate_reset_seconds(projected["window_reset_ms"], current_ms),
+        "window_start_ms": projected["window_start_ms"],
+        "window_reset_ms": projected["window_reset_ms"],
     }
 
 

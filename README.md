@@ -1,45 +1,60 @@
 # ESP-o-nitor
 
-A physical usage monitor for Claude and Codex: an ESP32 with two SSD1306 OLED displays
-(128x64) that shows each tool's quota and activity. All the computation and rendering happens
-on a service running on the PC; the ESP32 only projects the framebuffers it receives.
+A physical usage monitor for Claude and Codex. A host service reads each tool's quota and
+activity and feeds an ESP32 display that shows, at a glance, how much of your 5h and weekly
+windows is left and whether each tool is working, waiting or idle.
+
+The heavy lifting (reading quota, tracking activity, deciding pace) always happens in the host
+service. What changes between builds is only the **display hardware**, so the firmware comes in
+two variants that talk to the **same** service:
 
 ```
-[monitor-service (PC/Docker)]  --HTTP-->  [ESP32]  --I2C-->  2x OLED SSD1306
-        renders 128x64 1-bit             projects            Claude / Codex
+                                   /--HTTP frames--> [OLED ESP32] --I2C--> 2x SSD1306 128x64 (mono)
+[monitor-service (PC/Docker)] -----|
+   reads quota + activity          \--HTTP JSON----> [CYD ESP32]  --SPI--> 1x ILI9341 320x240 (color)
 ```
+
+| Variant | Hardware | How it draws |
+| --- | --- | --- |
+| **OLED** | 2x SSD1306 128x64 mono (I2C), one screen per tool | The service renders the 1-bit framebuffers and the ESP just projects them (`/api/esp/frames`). |
+| **CYD** | 1x ILI9341 320x240 color (ESP32-2432S028R "Cheap Yellow Display"), both tools on one screen | The ESP draws in color on-device from a ~1 KB JSON snapshot (`/api/esp/snapshot`). |
+
+Pick one variant per device; the service supports both at once with no changes.
 
 ## Repository layout
 
 | Folder | Contents |
 | --- | --- |
-| [`esp32/`](esp32/) | ESP32 firmware (PlatformIO, C++). Polls the service, projects the screens, animates activity and shows local screensavers. |
-| [`monitor-service/`](monitor-service/) | Host service (Python). Reads Claude/Codex quota, renders the OLED screens and serves them over HTTP; includes a live configuration web UI. |
-| [`3d-models/`](3d-models/) | Printable enclosure (STEP + STL, with PNG previews): case and lid for the ESP32 board plus the base and lids that hold the two screens. |
+| [`monitor-service/`](monitor-service/) | Host service (Python). Reads Claude/Codex quota, detects activity, renders the OLED frames and serves everything over HTTP. Includes a live configuration web UI. Shared by both firmware variants. |
+| [`firmware/oled/`](firmware/oled/) | OLED firmware (PlatformIO, C++): projects the framebuffers the service renders, animates the activity corner and shows local screensavers. |
+| [`firmware/cyd/`](firmware/cyd/) | CYD firmware (PlatformIO, C++): draws both tools in color natively from the JSON snapshot. |
+| [`3d-models/`](3d-models/) | Printable enclosure for the OLED dual-screen build (STEP + STL with PNG previews): case and lid for the board plus the base and lids that hold the two screens. |
 
-The root holds shared material: this README and common configuration.
+Each folder has its own README with architecture, requirements and commands.
 
 ## Getting started
 
 1. **Host service** ([`monitor-service/`](monitor-service/)): run it with Docker
    (`docker compose up -d --build`) or locally. It serves the web UI at `http://localhost:8765`
-   and the `/api/esp/*` endpoints the ESP consumes.
-2. **Firmware** ([`esp32/`](esp32/)): build and flash with PlatformIO (USB or OTA), then point
-   the ESP at the service URL from its configuration web page.
-
-Each folder has its own README with the details on architecture, requirements and commands.
+   and the `/api/esp/*` endpoints the devices consume. This step is the same for both variants.
+2. **Firmware**: build and flash the variant that matches your hardware with PlatformIO (USB or
+   OTA), then point the device at the service URL (`http://PC_IP:8765`) from its own
+   configuration web page.
+   - OLED: [`firmware/oled/`](firmware/oled/)
+   - CYD: [`firmware/cyd/`](firmware/cyd/)
 
 ## How the pieces fit
 
-- The service draws each screen (128x64, 1 bit) and serves it at `/api/esp/frames`.
-- The ESP32 polls that endpoint and copies the bitmap straight to the OLED (it never interprets
-  the content).
-- Activity (working / waiting / idle) arrives via long-poll so the device reacts almost
-  instantly; the corner animation is downloaded once (re-downloaded only if its ETag changes).
-- Almost everything (theme, labels, animation, screensaver, brightness, manual usage) is set
-  from the service web UI and applied on the ESP's next poll, without reflashing. You only need
-  to reflash when the firmware itself changes (`esp32/src/main.cpp`, `esp32/platformio.ini` or
-  its dependencies).
+- The service builds a usage snapshot (remaining percentage, 5h/weekly windows, expected pace)
+  and exposes it under `/api/esp/*`. The OLED variant consumes pre-rendered frames
+  (`/api/esp/frames`); the CYD variant consumes the raw snapshot (`/api/esp/snapshot`) and draws
+  it in color itself.
+- Activity (working / waiting / idle) arrives via long-poll (`/api/esp/activity-wait`) so either
+  device reacts almost instantly and drives its activity animation.
+- Almost everything (theme, labels, animation, screensaver, brightness, manual usage) is set from
+  the service web UI and applied on the device's next poll, without reflashing. You only reflash
+  when the firmware itself changes (`firmware/<variant>/src/main.cpp`, its `platformio.ini` or its
+  dependencies).
 
 ## Development
 
@@ -50,8 +65,8 @@ Each folder has its own README with the details on architecture, requirements an
   of the already running service. Only use Docker commands when the container configuration,
   dependencies, `Dockerfile` or `docker-compose.yml` change, or if the live service stops
   responding.
-- **Firmware** (`esp32/`): only needs reflashing when `esp32/src/main.cpp`,
-  `esp32/platformio.ini` or the PlatformIO dependencies change. See [`esp32/README.md`](esp32/)
+- **Firmware** (`firmware/oled/`, `firmware/cyd/`): only needs reflashing when that variant's
+  `src/main.cpp`, `platformio.ini` or PlatformIO dependencies change. See each variant's README
   for the build and flash commands (USB and OTA).
 
 ## License

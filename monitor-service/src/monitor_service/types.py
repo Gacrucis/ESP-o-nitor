@@ -42,6 +42,8 @@ class UsageWindowSnapshot(TypedDict):
     expected_remaining_percent: float
     pace: Pace
     reset_in_seconds: int
+    window_start_ms: int
+    window_reset_ms: int
 
 
 class ToolSnapshot(TypedDict):

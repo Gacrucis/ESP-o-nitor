@@ -1,7 +1,13 @@
 # 3d-models
 
-Printable enclosure for the ESP-o-nitor. Each part is provided both as STEP (ISO 10303, editable
-in CAD) and as STL (ready to slice).
+Printable enclosure for the **OLED variant** of ESP-o-nitor ([`../firmware/oled/`](../firmware/oled/)):
+the ESP32 dev board plus the two OLED SSD1306 128x64 displays. Each part is provided both as STEP
+(ISO 10303, editable in CAD) and as STL (ready to slice).
+
+The **CYD variant** ([`../firmware/cyd/`](../firmware/cyd/)) is not covered here: it is a single
+self-contained board (ESP32-2432S028R), so any off-the-shelf horizontal CYD case works - search
+"CYD" or "ESP32-2432S028R" on [printables.com](https://www.printables.com/) or
+[makerworld.com](https://makerworld.com/).
 
 - [`STEP/`](STEP/) - solid models (FreeCAD, Fusion 360, etc.).
 - [`STL/`](STL/) - meshes ready for a slicer (PrusaSlicer, Cura, etc.).
@@ -23,5 +29,3 @@ is printed once. Together they make up the enclosure for the ESP32 and the two s
 
 - STEP is a solid-model format: open the `STL/` files directly in a slicer to generate the
   printing G-code, or the `STEP/` files in CAD to adjust them.
-- Match the print with the hardware in [`../esp32/`](../esp32/): ESP32 dev board and two OLED
-  SSD1306 128x64 displays.

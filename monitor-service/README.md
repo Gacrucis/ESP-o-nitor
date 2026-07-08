@@ -1,19 +1,24 @@
 # monitor-service
 
-Local service that feeds the [ESP32 monitor](../esp32/) of Claude and Codex usage. It reads each
-tool's quota, renders the two OLED screens (128x64, 1 bit) as images, generates the activity
-animation and the screensaver, and serves it all over HTTP. It includes a live configuration web
-UI.
+Local service that feeds the [ESP-o-nitor firmware](../firmware/) with Claude and Codex usage. It
+reads each tool's quota and activity, and serves it over HTTP to whichever display variant is
+connected. It includes a live configuration web UI.
 
-The ESP32 computes nothing: this service does the rendering and the device only projects.
+It backs both firmware variants from the same snapshot:
+
+- [OLED](../firmware/oled/): the service renders the two screens (128x64, 1 bit) as framebuffers
+  and the device only projects them.
+- [CYD](../firmware/cyd/): the service exposes the raw JSON snapshot and the device draws it in
+  color itself.
 
 ## How it works
 
-- Builds a usage snapshot (remaining percentage, 5h/weekly windows, expected pace).
+- Builds a usage snapshot (remaining percentage, 5h/weekly windows, expected pace). It is served
+  raw at `/api/esp/snapshot` (consumed by the CYD).
   - Claude: usage OAuth endpoint.
   - Codex: local `rate_limits` snapshots from the rollouts.
-- Renders each screen with Pillow according to the selected theme and serves it as a framebuffer
-  at `/api/esp/frames` (with cache and ETag so it is not rebuilt on every ESP poll).
+- Renders each OLED screen with Pillow according to the selected theme and serves it as a
+  framebuffer at `/api/esp/frames` (with cache and ETag so it is not rebuilt on every ESP poll).
 - Detects activity (working / waiting / idle) and delivers it via long-poll so the ESP reacts
   almost instantly.
 - Packs the corner animation (configurable style + size) into a binary that the ESP downloads
